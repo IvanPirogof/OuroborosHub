@@ -2502,6 +2502,9 @@
 
     function jointTail(fam, option, ctx) {
         var out = [];
+        if (fam.options_omitted) out.push({
+            text: plural(fam.options_omitted, 'more model choice') + ' · quota_summary accepts an exact name', tone: ''
+        });
         var counts = option.counts || {};
         if (counts.blocked) {
             var by = option.blocked_by || {};

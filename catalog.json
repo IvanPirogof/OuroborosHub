@@ -351,12 +351,12 @@
       "when_to_use": "When the user wants to play an authentic Classic Doom (1993) 2.5D FPS raycaster game directly in an Ouroboros extension widget with monsters, weapons, sound effects, and heavy metal synth."
     },
     {
-      "description": "Claudexor quota widget and read-only quota_summary tool: one bar per account and limit (current, dated last-known, or unknown — never zero), reserve in account-windows with coverage, restrictions and reported resets, and under the chosen limit a timeline — its recorded past and one conditional future (no new use, or the recent pace) of the accounts read now, with its reset schedule — from a bounded local history of passive readings.",
+      "description": "Claudexor quota widget and read-only quota_summary tool: one bar per account and limit (current, dated last-known, or unknown — never zero), reserve in account-windows with coverage, restrictions and reported resets near every row; what all limits allow together per account and model (who has no known restriction, held by what until when, account-hours of each account's own recent mix) with its reported events ahead; and one timeline — a limit's recorded past and conditional future, or the limits together — from a bounded local history of passive readings.",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "574587ed2c49901f8873261604fa9ca5717a04bbe56574972adb2e311bbb6f11",
-          "size": 86356
+          "sha256": "53d4c67adf03f797271579249a727a61699f18cee58b6ef60efe721a2126be63",
+          "size": 86396
         },
         {
           "path": "plugin.py",
@@ -370,8 +370,8 @@
         },
         {
           "path": "quota_summary.py",
-          "sha256": "779ee2c3ce1715d10f57f5aa31e12e943e2b2ed549ff1f56bdec95ec3f654fff",
-          "size": 209018
+          "sha256": "d0e24e7e8a7c63739c187124bebe01312c98e3d430ef2dadce53db8fa13981f5",
+          "size": 209116
         },
         {
           "path": "test_bars.py",
@@ -407,6 +407,11 @@
           "path": "test_joint.py",
           "sha256": "b9d61332944a53e34a8d26e6732cca5f7eb9c89f2a60f3b7a7d7ecf0817bd3a8",
           "size": 60234
+        },
+        {
+          "path": "test_joint_projection.py",
+          "sha256": "38d996cce43d15ce8a14ea2cfab47a8d843f80c2867585f7b1a349bf7a5476f3",
+          "size": 2830
         },
         {
           "path": "test_joint_widget.py",
@@ -485,8 +490,8 @@
         },
         {
           "path": "widget.js",
-          "sha256": "bc94e0cefde7fcd40ebeb51310c751d4feaae33c3f638747b547fdb42ee75c09",
-          "size": 311582
+          "sha256": "b05ba7ce07d46b4fa6a5c26a6eb3b8293396c34efcdc8db5ed458cd349c2622f",
+          "size": 311759
         }
       ],
       "name": "claudexor_quotas",

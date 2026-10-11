@@ -3646,7 +3646,7 @@ def _simulate(acct: _Account, options: Sequence[ModelOption], kind: str, now: fl
         vertices.append((step, before, after))
         if happened:
             states.append((step, {o.key: _eligibility(acct, o, kind, state)[0] for o in options}))
-            events.extend((step, what, key) for what, key in happened)
+            events.extend((step, what, key) for what, key in dict.fromkeys(happened))
         t = step
     return {"vertices": vertices, "states": states, "events": events}
 
@@ -4052,7 +4052,8 @@ def _compact_together(family: Dict[str, Any], names: Dict[str, str], model: str)
     note = ""
     shared = [o for o in every if o["key"] == "other"]
     if model:
-        options = [o for o in every if model in (o.get("models") or [])]
+        # Printed names may be clipped; match the full identity's stable key.
+        options = [o for o in every if o.get("key") == "model:" + _scope_hash((model,))]
         if not options:
             options = shared
             note = f"{model!r} is named by no model-scoped limit or hold: only the shared limits apply"
@@ -4228,7 +4229,7 @@ def compact(summary: Dict[str, Any], harness: str = "", detail: bool = False,
     if summary.get("roster") and summary.get("roster") != "current":
         extra["roster"] = summary["roster"]
     names = _limit_names(summary)
-    model_name = str(model or "").strip()[:MAX_TEXT]
+    model_name = str(model or "").strip()
     together = [_compact_together(family, names, model_name) for family in summary.get("together", [])
                 if not wanted or str(family.get("harness", "")).lower() == wanted]
     if together:

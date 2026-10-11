@@ -11,7 +11,7 @@ env_from_settings: []
 when_to_use: "The owner wants quota windows, resets and remaining reserve of the authorized Claudexor accounts; or, before choosing executors, the model wants measured reserve by family and limit. Advisory only: never a dispatch guarantee or a pin change."
 model_experience:
   what_model_sees: "One tool, quota_summary, with a fixed schema (optional harness, detail, model, request_kind). Only when called does compact JSON (account-windows per family and limit, current and dated last-known apart, coverage, restrictions, resets, pace, a one-line headline per limit, and per family what the limits allow together with its next events) arrive as a tool result; nothing is auto-inserted."
-  token_effect: "Fixed schema and description while enabled; each voluntary call adds about 2-14 KB of JSON, about 4-8 KB for one family. No automatic call or cache benefit is promised."
+  token_effect: "Fixed schema and description while enabled; each voluntary call adds JSON whose size depends on accounts and model scopes; detail includes full reset schedules. No automatic call or cache benefit is promised."
 timeout_sec: 180
 ui_tab:
   tab_id: quotas
