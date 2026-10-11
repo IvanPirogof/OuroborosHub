@@ -371,7 +371,9 @@ const paceLines = (env) => walk(env.root).filter((n) => n.tagName === 'PATH'
   await respond(env, fx.good);
   assert.ok(barStates(env).every((s) => s === 'current'), barStates(env).join());
   assert.match(env.root.textContent, /0\.70 of 2/);
-  // The timeline is open on every mount: its chart is asked for and drawn.
+  // The timeline is open on every mount (0.10.0: on the limits together);
+  // the limit's own, on its row's control: its chart is asked for and drawn.
+  click(env, 'limit:' + fx.good_chart.reserve.chart.group_key);
   await respond(env, fx.good_chart);
   assert.ok(paceLines(env) > 0, 'the future is drawn while current');
   env.clock.shift = 3 * 3600 * 1000;                   // 1 h past the reported reset
@@ -408,6 +410,7 @@ const paceLines = (env) => walk(env.root).filter((n) => n.tagName === 'PATH'
   // 7. The chart narrates the record by its own accounts, not the current count.
   env = bootClock();
   await respond(env, fx.hist);
+  click(env, 'limit:' + fx.hist_chart.reserve.chart.group_key);
   click(env, 'horizon:24h');
   await respond(env, fx.hist_chart);
   const plot = byFocus(env.root, 'chart-plot');
@@ -421,6 +424,8 @@ const paceLines = (env) => walk(env.root).filter((n) => n.tagName === 'PATH'
   // the accounts with no reported reset apart.
   env = bootClock();
   await respond(env, fx.paced);
+  click(env, 'limit:' + fx.paced.reserve.chart.group_key);
+  await settle();
   // The limit's details sit under the timeline's "Details, notes and data".
   const details = classes(env.root, 'chart-table')[0];
   assert.ok(details, 'the timeline carries its details');
@@ -443,6 +448,7 @@ const paceLines = (env) => walk(env.root).filter((n) => n.tagName === 'PATH'
   // and the POST is not sent again.
   env = bootClock();
   await respond(env, fx.good);
+  click(env, 'limit:' + fx.good_chart.reserve.chart.group_key);
   await respond(env, fx.good_chart);      // the chart the open timeline asks for
   byFocus(env.root, 'refresh').listeners.click[0]();
   await settle();
