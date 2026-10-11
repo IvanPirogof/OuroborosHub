@@ -436,6 +436,11 @@ class Reading:
     # is the bounded list shown, ``models_omitted`` what it leaves out.
     scope: str = "-"
     models_omitted: int = 0
+    # 0.10.0: the whole model scope (``models`` is the bounded part shown),
+    # and which request kinds the limit applies to (request_scope_of).
+    scope_models: Tuple[str, ...] = ()
+    request_scope: str = "universal"
+    request_kinds: Tuple[str, ...] = ()
 
 
 @dataclass
@@ -455,6 +460,7 @@ class Cooldown:
     fresh: bool
     observed_at: Optional[float]
     models_omitted: int = 0  # names of the scope ``models`` leaves out
+    scope_models: Tuple[str, ...] = ()  # the whole scope, every name in full
 
 
 @dataclass
@@ -481,6 +487,7 @@ class Exhaustion:
     source: str
     fresh: bool
     observed_at: Optional[float]
+    scope_models: Tuple[str, ...] = ()  # the whole scope, every name in full
 
 
 @dataclass
@@ -526,6 +533,13 @@ class Normalized:
     cached: Dict[str, float] = field(default_factory=dict)
     # account -> keys of shared limits its current reading reports spent.
     spent: Dict[Tuple[str, str], Set[str]] = field(default_factory=dict)
+    # 0.10.0, for what the limits allow together: when each cooldown that
+    # holds the whole account ends (None: unreadable or not reported), and
+    # every model hold — a cooldown on some models or a live reported model
+    # limit — as (kind, scope, the whole scope's names, its end).
+    account_cooldowns: Dict[Tuple[str, str], List[Optional[float]]] = field(default_factory=dict)
+    model_holds: Dict[Tuple[str, str], List[Tuple[str, str, Tuple[str, ...], Optional[float]]]] = \
+        field(default_factory=dict)
 
     @property
     def accounts_cached(self) -> bool:
@@ -613,6 +627,29 @@ def _shown_models(scope_models: Tuple[str, ...]) -> Tuple[str, ...]:
     """The part of a scope that is shown: its first MAX_MODELS names, each cut
     to MAX_TEXT. The caller says how many names it leaves out."""
     return tuple(name[:MAX_TEXT] for name in scope_models[:MAX_MODELS])
+
+
+MAX_REQUEST_KINDS = 16
+
+
+def request_scope_of(constraint: Dict[str, Any]) -> Tuple[str, Tuple[str, ...]]:
+    """Which kinds of request a limit applies to (``applies_to_request_kinds``,
+    an optional engine field): ``universal`` when it is absent or null — the
+    legacy meaning, every kind — ``listed`` with the names for a non-empty
+    list of names, and ``unknown`` for anything else (not a list, an empty
+    list, an entry that is not a name). Unknown is never read as universal
+    nor as "not this kind". It does not change the limit's key: a limit keeps
+    its recorded history whether or not the engine names its kinds."""
+    raw = constraint.get("applies_to_request_kinds") if isinstance(constraint, dict) else None
+    if raw is None:
+        return "universal", ()
+    if not isinstance(raw, list) or not raw or len(raw) > 4 * MAX_REQUEST_KINDS:
+        return "unknown", ()
+    names = [item.strip() for item in raw if isinstance(item, str)]
+    if len(names) != len(raw) or not all(names):
+        return "unknown", ()
+    kinds = tuple(sorted({name[:MAX_TEXT] for name in names}))
+    return ("listed", kinds) if len(kinds) <= MAX_REQUEST_KINDS else ("unknown", ())
 
 
 def is_reset_credit(constraint: Dict[str, Any], harness: str) -> bool:
@@ -762,13 +799,15 @@ def reading_of(constraint: Dict[str, Any], harness: str, subject_id: str, *, sou
     ratio, problem = ratio_of(raw_ratio)
     label = _text(constraint.get("label") or constraint.get("id")) or "limit"
     meaning = meaning_of(harness, _text(constraint.get("id"), 120), label)
+    request_scope, request_kinds = request_scope_of(constraint)
     return Reading(
         harness=harness, subject_id=subject_id, source=source, fresh=fresh,
         observed_at=observed, key=group_key(harness, meaning, window, scope_models),
         meaning=meaning, label=label, window=window, models=models, ratio=ratio,
         ratio_problem=problem, resets_at=parse_instant(constraint.get("resets_at")),
         plan=plan, plan_key=plan_key, scope=_scope_hash(scope_models),
-        models_omitted=len(scope_models) - len(models),
+        models_omitted=len(scope_models) - len(models), scope_models=scope_models,
+        request_scope=request_scope, request_kinds=request_kinds,
     )
 
 
@@ -924,7 +963,7 @@ def cooldowns_of(row: Dict[str, Any], harness: str, subject_id: str, now: float,
             scope=_scope_hash(scope_models), until=parse_instant(raw) if reported else None,
             until_text=_text(raw, 64) if reported else "", kind=kind, label=label,
             source=source, fresh=fresh, observed_at=observed,
-            models_omitted=len(scope_models) - len(shown))
+            models_omitted=len(scope_models) - len(shown), scope_models=scope_models)
 
     availability = row.get("availability") if isinstance(row.get("availability"), dict) else {}
     if fresh and str(availability.get("state") or "") == "cooldown":
@@ -988,7 +1027,8 @@ def exhaustions_of(row: Dict[str, Any], harness: str, subject_id: str,
             constraint_id=_text(entry.get("constraint_id"), 120), models=shown,
             models_omitted=len(scope_models) - len(shown), scope=_scope_hash(scope_models),
             resets_at=resets_at, resets_text=_text(raw, 64) if reported else "",
-            live=not note, note=note, source=source, fresh=fresh, observed_at=observed))
+            live=not note, note=note, source=source, fresh=fresh, observed_at=observed,
+            scope_models=scope_models))
     return out
 
 
@@ -1024,6 +1064,8 @@ def normalize(payload: Any, now: float,
     cooling_all: Set[Tuple[str, str]] = set()
     cooling_scoped: Dict[Tuple[str, str], Set[str]] = {}
     exhausted_scoped: Dict[Tuple[str, str], Set[str]] = {}
+    account_cooldowns: Dict[Tuple[str, str], List[Optional[float]]] = {}
+    model_holds: Dict[Tuple[str, str], List[Tuple[str, str, Tuple[str, ...], Optional[float]]]] = {}
 
     for hid, sid, row in attributed.rows:
         if hid not in harness_order:
@@ -1037,13 +1079,18 @@ def normalize(payload: Any, now: float,
         for cooldown in cooldowns_of(row, hid, sid, now, projection):
             if cooldown.scope == "-":
                 cooling_all.add((hid, sid))
+                account_cooldowns.setdefault((hid, sid), []).append(cooldown.until)
             else:
                 cooling_scoped.setdefault((hid, sid), set()).add(cooldown.scope)
+                model_holds.setdefault((hid, sid), []).append(
+                    ("cooldown", cooldown.scope, cooldown.scope_models, cooldown.until))
         for exhaustion in exhaustions_of(row, hid, sid, now):
             # A model's limit, never the account: one that names no model
             # cannot hold any window.
             if exhaustion.live and exhaustion.scope != "-":
                 exhausted_scoped.setdefault((hid, sid), set()).add(exhaustion.scope)
+                model_holds.setdefault((hid, sid), []).append(
+                    ("model_limit", exhaustion.scope, exhaustion.scope_models, exhaustion.resets_at))
         constraints = row.get("constraints")
         for constraint in (constraints if isinstance(constraints, list) else [])[:MAX_CONSTRAINTS]:
             if not isinstance(constraint, dict):
@@ -1063,6 +1110,7 @@ def normalize(payload: Any, now: float,
         unattributed=attributed.unattributed,
         superseded=attributed.superseded, malformed=malformed,
         cached={k: float(v) for k, v in (cached or {}).items() if k in FACETS},
+        account_cooldowns=account_cooldowns, model_holds=model_holds,
     )
 
 
@@ -1112,6 +1160,10 @@ class Member:
     pseudo: str = ""
     # The newest usable reading that is not current (see LastKnown), or None.
     last_known: Optional["LastKnown"] = None
+    # 0.10.0: the (time, used ratio) points its recent pace was taken from,
+    # so that several limits of one account can be compared over one common
+    # stretch (_aligned_rates). Never emitted.
+    rate_points: List[Tuple[float, float]] = field(default_factory=list)
 
 
 @dataclass
@@ -1212,6 +1264,13 @@ class GroupCalc:
     # in this answer but whose last reading of it the local history keeps
     # (status history_only). Never counted as measured.
     extra: List[Member] = field(default_factory=list)
+    # 0.10.0: the whole model scope, which request kinds the limit applies
+    # to (request_scope_of; ``mixed`` when its readings disagree) and whether
+    # no reading of this answer names it — known only from the history.
+    all_models: Tuple[str, ...] = ()
+    request_scope: str = "universal"
+    request_kinds: Tuple[str, ...] = ()
+    restored: bool = False
 
     @property
     def measured(self) -> List[Member]:
@@ -1352,6 +1411,8 @@ def resolve_groups(norm: Normalized, now: float) -> List[GroupCalc]:
         family_accounts = [a for (h, _s), a in norm.accounts.items() if h == sample.harness]
         present = {m.subject_id for m in members}
         other = sum(1 for a in family_accounts if a.subject_id not in present)
+        scopes = {(r.request_scope, r.request_kinds) for rows in subjects.values() for r in rows}
+        request_scope, request_kinds = next(iter(scopes)) if len(scopes) == 1 else ("mixed", ())
         groups.append(GroupCalc(
             key=key, harness=sample.harness,
             family=norm.families.get(sample.harness, sample.harness),
@@ -1360,7 +1421,8 @@ def resolve_groups(norm: Normalized, now: float) -> List[GroupCalc]:
             other_family_accounts=other,
             possible_duplicates=_shared_identities(norm, members),
             models_omitted=sample.models_omitted,
-            scope=sample.scope,
+            scope=sample.scope, all_models=sample.scope_models,
+            request_scope=request_scope, request_kinds=request_kinds,
         ))
     groups.sort(key=lambda calc: _order_key(norm, calc))
     return groups[:MAX_GROUPS]
@@ -1470,7 +1532,15 @@ def _quantized(values: Iterable[float]) -> bool:
 
 
 def member_rate(view: Optional[HistoryView], member: Member, now: float) -> Dict[str, Any]:
-    """Endpoint slope over the trailing comparable stretch inside the last hour.
+    """Endpoint slope over the trailing comparable stretch inside the last
+    hour (see _rate_and_points)."""
+    return _rate_and_points(view, member, now)[0]
+
+
+def _rate_and_points(view: Optional[HistoryView], member: Member, now: float
+                     ) -> Tuple[Dict[str, Any], List[Tuple[float, float]]]:
+    """Endpoint slope over the trailing comparable stretch inside the last hour,
+    and the (time, ratio) points it was taken from.
 
     Only observations of the chosen source count: two sources of one account
     round differently, and mixing them would turn rounding into use. Only
@@ -1484,7 +1554,7 @@ def member_rate(view: Optional[HistoryView], member: Member, now: float) -> Dict
     """
     reading = member.reading
     if view is None or view.state == "unavailable":
-        return {"state": "unavailable", "reason": "history_unavailable"}
+        return {"state": "unavailable", "reason": "history_unavailable"}, []
     window_start = now - RATE_WINDOW_SEC
     # Only what the tool's narrower history read also sees, so the widget and
     # the tool compute the same pace whatever else the chart asked for.
@@ -1546,7 +1616,7 @@ def member_rate(view: Optional[HistoryView], member: Member, now: float) -> Dict
             "state": "warming_up" if warming else "insufficient",
             "reason": reason,
             "span_seconds": round(span),
-        }
+        }, []
     used = points[-1][1] - points[0][1]
     rate = max(0.0, used) / span * 3600.0
     out: Dict[str, Any] = {
@@ -1565,7 +1635,7 @@ def member_rate(view: Optional[HistoryView], member: Member, now: float) -> Dict
         out["cut_by"] = stop_reason
     if _quantized(v for _t, v in points):
         out["resolution_windows_per_hour"] = 0.01 / span * 3600.0
-    return out
+    return out, points
 
 
 # ---------------------------------------------------------------------------
@@ -1839,6 +1909,15 @@ def _group_output(calc: GroupCalc, now: float, named: bool = False) -> Dict[str,
         "meaning": calc.meaning,
         "window_seconds": calc.window,
         "duration": duration_words(calc.window),
+        # Additive since 0.10.0: what the limit is known to apply to (see
+        # applicability_basis and request_scope_of), whether no reading of
+        # this answer names it — known only from the local history — and
+        # every reported reset of its accounts, current and last known apart.
+        "applicability_basis": applicability_basis(calc),
+        "request_scope": calc.request_scope,
+        "request_kinds": list(calc.request_kinds),
+        "restored_from_history": calc.restored,
+        "reset_schedule": _reset_schedule(calc, now),
         "models": list(calc.models),
         "models_omitted": calc.models_omitted,
         # Additive since 0.7.0: whether the limit is tied to models, and
@@ -1900,6 +1979,40 @@ def _group_output(calc: GroupCalc, now: float, named: bool = False) -> Dict[str,
             "windows": _round(windows + lk_windows),
             "accounts": len(measured) + len(carried),
         },
+    }
+
+
+def _reset_events(times: Sequence[float]) -> List[Tuple[float, float, int]]:
+    """Reported resets grouped as next_reset groups them: one within
+    RESET_TOLERANCE_SEC of the first of a group belongs to it. (first, last,
+    how many), in time order."""
+    events: List[List[Any]] = []
+    for at in sorted(times):
+        if events and at - events[-1][0] <= RESET_TOLERANCE_SEC:
+            events[-1][1] = at
+            events[-1][2] += 1
+        else:
+            events.append([at, at, 1])
+    return [(first, last, count) for first, last, count in events]
+
+
+def _reset_schedule(calc: GroupCalc, now: float) -> Dict[str, Any]:
+    """Every reported reset of the limit's accounts, without a chart: the
+    current readings' next resets, and apart — never merged into them — the
+    resets the last-known readings reported, each saying whether it has
+    passed (a reset expected, with no reading since: never a refill). Whole:
+    one row per distinct moment, never more rows than the limit has
+    accounts, and none left out."""
+    current = [m.reading.resets_at for m in calc.measured
+               if m.reading is not None and m.reading.resets_at is not None and m.reading.resets_at > now]
+    known = [m.last_known.resets_at for m in calc.slots
+             if m.status != "measured" and m.last_known is not None and m.last_known.resets_at is not None]
+    return {
+        "current": [{"at": iso(first), "last": iso(last), "accounts": count}
+                    for first, last, count in _reset_events(current)],
+        "last_known": [{"at": iso(first), "last": iso(last), "accounts": count, "passed": last <= now}
+                       for first, last, count in _reset_events(known)],
+        "current_without_reset": sum(1 for m in calc.measured if m.reading and m.reading.resets_at is None),
     }
 
 
@@ -2050,9 +2163,12 @@ def _history_group(norm: Normalized, key: str, harness: str) -> Optional[GroupCa
         window = int(window_text) or None
     except ValueError:
         window = None
+    # The history records no request kinds: a restored limit is read as the
+    # legacy field's absence says — every kind (request_scope_of).
     return GroupCalc(key=key, harness=harness, family=norm.families.get(harness, harness),
                      meaning=meaning, label=meaning, window=window, models=(), members=[],
-                     other_family_accounts=0, possible_duplicates=0, scope=scope)
+                     other_family_accounts=0, possible_duplicates=0, scope=scope,
+                     restored=True)
 
 
 def finish(norm: Normalized, groups: List[GroupCalc], view: Optional[HistoryView],
@@ -2079,7 +2195,7 @@ def finish(norm: Normalized, groups: List[GroupCalc], view: Optional[HistoryView
         for member in calc.members:
             member.pseudo = pseudo_id(salt, member.harness, member.subject_id) if salt else ""
             if member.status == "measured":
-                member.rate = member_rate(view, member, now)
+                member.rate, member.rate_points = _rate_and_points(view, member, now)
                 continue
             if member.last_known is not None and "quota" in norm.cached:
                 # Every quota reading of this answer was kept from an earlier one.
@@ -2146,11 +2262,16 @@ def build_summary(payload: Any, view: Optional[HistoryView], now: float,
                   *, status_read_at: Optional[float] = None,
                   state: Optional[SummaryState] = None,
                   reads: Optional[Dict[str, str]] = None,
-                  name_accounts: bool = False) -> Dict[str, Any]:
+                  name_accounts: bool = False,
+                  request_kind: str = "text",
+                  model: str = "") -> Dict[str, Any]:
     """The whole reserve overview; the widget and the tool both read this.
 
     ``reads`` are the facet states of the answer as the host gave it, when
-    some facets were answered from an earlier read (``cached``)."""
+    some facets were answered from an earlier read (``cached``).
+    ``request_kind`` is the kind of request the limits are judged together
+    for (``together``); text unless asked otherwise. ``model``: a full model
+    name the tool asks for, resolved before the bound on model choices."""
     state = state or compute(payload, view, now)
     norm = state.norm
     groups = [_group_output(calc, now, name_accounts) for calc in state.groups]
@@ -2172,6 +2293,9 @@ def build_summary(payload: Any, view: Optional[HistoryView], now: float,
         "superseded_alias_readings": dict(sorted(norm.superseded.items())),
         "malformed_entries": norm.malformed,
         "groups": groups,
+        # Additive since 0.10.0: what each family's limits allow together
+        # (build_together) — per account and model choice first.
+        "together": build_together(state, request_kind, name_accounts, model),
         "notes": list(GLOBAL_NOTES),
     }
 
@@ -3043,6 +3167,767 @@ def build_chart(state: SummaryState, key: str = "", harness: str = "",
 
 
 # ---------------------------------------------------------------------------
+# Together (0.10.0): what an account's limits allow at once
+#
+# A 5-hour limit, a weekly limit and a model's own weekly limit bound the same
+# work at the same time: an account can serve a model only while every limit
+# that applies to it has quota, and it repeats its recent work only while
+# every limit that work consumes has quota. Both are decided per account
+# first; families are added up only afterwards. What is unknown stays
+# unknown: never a zero, never a positive proof, never an infinite reserve.
+
+
+DEFAULT_REQUEST_KIND = "text"
+# Constraint ids are ``<bucket>:<window>``. The family's own bucket — the
+# harness's own namespace (dropped by meaning_of), no namespace at all, or the
+# engine's ``default`` bucket — is the account's main quota, as the engine's
+# own event projection treats it. Any other namespace is an extra bucket whose
+# applicability the engine itself marks unknown: never read as universal from
+# an empty model scope, and never classified by its name.
+OWN_NAMESPACES = ("default",)
+MAX_OPTIONS = 1 + MAX_MODELS
+MAX_TOGETHER_EVENTS = 48
+TOGETHER_SPAN_SEC = HORIZONS["7d"]
+TOGETHER_CHECKPOINTS = (3600.0, 6 * 3600.0, 86400.0, 3 * 86400.0, 604800.0)
+WORKLOAD_UNIT = ("account-hours: hours of each account repeating its own recent mix of work, "
+                 "added over the accounts whose mix could be measured; not hours of one model, "
+                 "not compute or task time")
+TOGETHER_STATES = ("not_running", "blocked", "incomplete", "no_known_block")
+
+
+def foreign_namespace(meaning: str) -> bool:
+    """Whether a limit's meaning still carries a namespace that is not the
+    family's own (see OWN_NAMESPACES)."""
+    if not meaning or meaning.startswith("label:") or ":" not in meaning:
+        return False
+    return meaning.split(":", 1)[0] not in OWN_NAMESPACES
+
+
+def applicability_basis(calc: GroupCalc) -> str:
+    """What a limit is known to apply to: ``named_models`` (its whole
+    ``applies_to_models`` list), ``names_unknown`` (model-scoped, names not
+    kept by the history), ``foreign_namespace`` (an extra bucket with no
+    model scope: unknown) or ``own`` (the family's own limit: every model).
+    A request-kind list is another dimension: it says which kinds an extra
+    bucket may bind (_verdict), never which models."""
+    scope = _model_scope(calc)
+    if scope == "named":
+        return "named_models"
+    if scope == "names_unknown":
+        return "names_unknown"
+    if foreign_namespace(calc.meaning):
+        return "foreign_namespace"
+    return "own"
+
+
+@dataclass
+class ModelOption:
+    """A choice of model for the question "which accounts could serve it":
+    one full model name some model-scoped limit or hold names (its whole
+    ``applies_to_models`` list, never a stem or a printed label), or
+    ``other`` — the shared limits alone, for models no such list names.
+    Names are never clustered: each is its own choice. ``unproven``: no
+    limit of the family is known to apply to it for the request kind, so
+    nothing read shows quota for it (_eligibility)."""
+    key: str
+    models: Tuple[str, ...]
+    rep: Optional[str]
+    named_elsewhere: bool = False
+    unproven: bool = False
+
+
+def _verdict(model: str, calc: GroupCalc, kind: str) -> str:
+    """A model verdict joined with the limit's request-kind verdict: not
+    applicable when either is, else unknown when either is."""
+    if calc.request_scope == "listed":
+        request = "applies" if kind in calc.request_kinds else "not_applicable"
+    elif calc.request_scope == "universal":
+        request = "applies"
+    else:
+        request = "unknown"
+    if "not_applicable" in (model, request):
+        return "not_applicable"
+    if "unknown" in (model, request):
+        return "unknown"
+    return "applies"
+
+
+def applies_to(calc: GroupCalc, option: ModelOption, kind: str) -> str:
+    """``applies``, ``not_applicable`` or ``unknown``: whether one limit binds
+    the option's models for one request kind."""
+    basis = applicability_basis(calc)
+    if basis == "named_models":
+        model = "applies" if option.rep is not None and option.rep in calc.all_models else "not_applicable"
+    elif basis == "own":
+        model = "applies"
+    else:
+        model = "unknown"
+    return _verdict(model, calc, kind)
+
+
+def applies_to_mix(calc: GroupCalc) -> str:
+    """The same verdict for an account's recent mix of work, whatever models
+    and request kinds it held: ``applies`` when the limit binds some model
+    (the family's own limit, or a model-scoped one: the unattributed mix may
+    have used its models) for some request kind it names (the mix may have
+    held those kinds too), ``unknown`` when what it applies to is unknown —
+    the union of applies_to over every model choice and every request kind.
+    The kind the reader judges eligibility for never enters it: the mix is
+    what was observed, not what is asked next."""
+    known = applicability_basis(calc) in ("own", "named_models")
+    return "applies" if known and calc.request_scope in ("universal", "listed") else "unknown"
+
+
+def model_options(calcs: Sequence[GroupCalc],
+                  holds: Iterable[Tuple[str, str, Tuple[str, ...], Optional[float]]],
+                  wanted: str = "") -> Tuple[List[ModelOption], int]:
+    """The family's model choices: ``other`` (the shared limits alone) first
+    — always, the default view, even when every limit read is model-scoped —
+    then every full name a model-scoped limit's or hold's whole
+    ``applies_to_models`` list carries, in the summary's order of those
+    limits, then by name — and how many past MAX_OPTIONS are left out. A
+    name asked for by exact identity (``wanted``) is resolved before that
+    bound: kept as one more choice when it falls past it."""
+    first: Dict[str, Tuple[int, str]] = {}
+    for index, calc in enumerate(calcs):
+        if applicability_basis(calc) != "named_models":
+            continue
+        for name in calc.all_models:
+            first.setdefault(name, (index, name))
+    for _kind, _scope, names, _until in holds:
+        for name in names:
+            first.setdefault(name, (len(calcs), name))
+    options = [ModelOption(key="other", models=(), rep=None, named_elsewhere=bool(first))]
+    for name in sorted(first, key=lambda n: first[n]):
+        options.append(ModelOption(key="model:" + _scope_hash((name,)), models=(name,), rep=name))
+    shown = options[:MAX_OPTIONS]
+    asked = [o for o in options[MAX_OPTIONS:] if wanted and o.rep == wanted]
+    return shown + asked[:1], len(options) - len(shown) - len(asked[:1])
+
+
+@dataclass
+class _Limit:
+    calc: GroupCalc
+    member: Optional[Member]
+    applies: Dict[str, str]
+    mix: str = "applies"  # applies_to_mix: the verdict for the account's recent mix
+    remaining: Optional[float] = None  # share left now; None when not current
+    reset: Optional[float] = None  # its next reported reset, still ahead
+    rate: Optional[float] = None  # use per hour over the common stretch
+    binding: bool = False  # consumed by the account's recent mix
+
+
+@dataclass
+class _Account:
+    subject: Tuple[str, str]
+    not_running: List[str]
+    state_known: bool
+    limits: List[_Limit]
+    account_holds: List[Optional[float]]
+    model_holds: List[Tuple[str, str, Tuple[str, ...], Optional[float]]]
+    workload: Dict[str, Any] = field(default_factory=dict)
+    calibrated: bool = False
+
+
+@dataclass
+class _State:
+    remaining: Dict[str, Optional[float]]
+    resets: Dict[str, Optional[float]]
+    account_holds: List[Optional[float]]
+    model_holds: List[Tuple[str, str, Tuple[str, ...], Optional[float]]]
+
+
+def _running_state(norm: Normalized, subject: Tuple[str, str]) -> Tuple[List[str], bool]:
+    """Why an account cannot run at all — switched off, signed out, failing
+    its check (a quota reset repairs none of them) — and whether its state is
+    known now: an account list kept from an earlier answer, or not read,
+    says which accounts there are, never their state."""
+    known = norm.accounts_known and not norm.accounts_cached
+    account = norm.accounts.get(subject)
+    if not known or account is None:
+        return [], False
+    why = []
+    if account.enabled is False:
+        why.append("disabled")
+    if not account.signed_in:
+        why.append("signed_out")
+    if account.auth_failed:
+        why.append("auth_failed")
+    return why, True
+
+
+def _step_value(points: Sequence[Tuple[float, float]], at: float) -> float:
+    """The used ratio last observed at or before ``at`` (the first one before
+    the first observation)."""
+    value = points[0][1]
+    for t, ratio in points:
+        if t <= at + 1e-6:
+            value = ratio
+        else:
+            break
+    return value
+
+
+def _calibrate(acct: _Account, now: float) -> Dict[str, Any]:
+    """How long the account could repeat its own recent mix of work before the
+    first limit that mix consumes runs out: H = min over those limits of
+    (share left / use per hour), every use rate taken over ONE common stretch
+    of watched readings at least MIN_RATE_SPAN_SEC long.
+
+    The mix is what was observed: a limit that grew over the stretch is
+    consumed by it, whichever model the reader chooses; a limit at its limit
+    throughout could not be consumed. A limit that showed no change while it
+    had quota is neither unused nor endless — its share of the mix is
+    unknown, and the account is left out of the hours (said, counted), never
+    given an infinite or a zero term or a rounding bound.
+
+    The whole set of limits that may bind the mix must be known first, as
+    the account's eligibility knows it: a limit of the family that applies
+    to some of its work with no reading for this account, a limit it carries
+    whose scope is unknown, whatever that limit reads, or a limit read but
+    not current leaves it out. So do limits paced from different sources (two
+    sources round and observe apart: their difference is not use), a limit
+    with no measured pace, and a model hold whose share of the mix is not
+    attributed (_hold_relation)."""
+    if acct.not_running:
+        return {"state": "not_running", "reasons": list(acct.not_running)}
+    present = [lim for lim in acct.limits if lim.member is not None]
+    if not present:
+        return {"state": "no_reading"}
+    if not acct.state_known:
+        return {"state": "incomplete", "reason": "account_state_unknown"}
+    missing = [lim.calc.key for lim in acct.limits if lim.member is None and lim.mix == "applies"]
+    if missing:
+        return {"state": "incomplete", "reason": "no_reading_of_limit", "limits": missing}
+    unscoped = [lim.calc.key for lim in present if lim.mix == "unknown"]
+    if unscoped:
+        return {"state": "incomplete", "reason": "unknown_scope", "limits": unscoped}
+    unread = [lim.calc.key for lim in present if lim.remaining is None]
+    if unread:
+        return {"state": "incomplete", "reason": "no_current_reading", "limits": unread}
+    unpaced = [lim.calc.key for lim in present
+               if lim.member.rate.get("state") != "ok" or len(lim.member.rate_points) < 2]
+    if unpaced:
+        return {"state": "not_calibrated", "reason": "pace_unknown", "limits": unpaced}
+    sources = sorted({lim.member.reading.source for lim in present})
+    if len(sources) > 1:
+        return {"state": "not_calibrated", "reason": "sources_differ",
+                "limits": [lim.calc.key for lim in present]}
+    start = max(lim.member.rate_points[0][0] for lim in present)
+    end = min(lim.member.rate_points[-1][0] for lim in present)
+    if end - start < MIN_RATE_SPAN_SEC:
+        return {"state": "not_calibrated", "reason": "no_common_interval",
+                "span_seconds": max(0, round(end - start))}
+    hours = (end - start) / 3600.0
+    interval = {"from": iso(start), "to": iso(end), "span_seconds": round(end - start)}
+    rates: Dict[str, float] = {}
+    unchanged: List[str] = []
+    for lim in present:
+        before = _step_value(lim.member.rate_points, start)
+        after = _step_value(lim.member.rate_points, end)
+        if before >= 1.0 - RATIO_EPS:
+            if _every_request(lim.calc):
+                # A limit every request needs, spent over the whole stretch:
+                # nothing could run, so how fast the mix uses it is unknown.
+                for other in present:
+                    other.binding = False
+                return {"state": "not_calibrated", "reason": "shared_limit_spent", "limits": [lim.calc.key],
+                        "interval": interval}
+            # A limit only some models or request kinds need, at its limit
+            # over the whole stretch: no request that needed it could
+            # succeed, so the observed mix did not consume it.
+            lim.rate = 0.0
+            continue
+        change = max(0.0, after - before)
+        lim.rate = change / hours
+        rates[lim.calc.key] = round(lim.rate, 6)
+        if change > RATIO_EPS:
+            lim.binding = True
+        else:
+            unchanged.append(lim.calc.key)
+    if unchanged:
+        for lim in present:
+            lim.binding = False
+        return {"state": "not_calibrated", "reason": "no_change_observed", "limits": unchanged,
+                "interval": interval, "rates": rates}
+    loose = [scope for _kind, scope, names, _until in acct.model_holds
+             if _hold_relation(acct, names) == "unknown"]
+    if loose:
+        for lim in present:
+            lim.binding = False
+        return {"state": "not_calibrated", "reason": "model_hold_unmeasured", "interval": interval,
+                "rates": rates}
+    if not any(lim.binding for lim in present):
+        return {"state": "not_calibrated", "reason": "no_change_observed", "interval": interval,
+                "rates": rates}
+    acct.calibrated = True
+    state = _initial_state(acct, now, now + TOGETHER_SPAN_SEC)
+    binding = min((lim for lim in present if lim.binding), key=lambda lim: (lim.remaining / lim.rate, lim.calc.key))
+    out = {"state": "ok", "hours": _hours(acct, state), "binding": binding.calc.key, "interval": interval,
+           "rates": rates}
+    if _mix_blocked(acct, state):
+        # What stops it now: a cooldown of the whole account, a limit the mix
+        # uses at its limit, or a model hold on such a limit.
+        spent = [lim.calc.key for lim in present
+                 if (lim.binding or _every_request(lim.calc)) and lim.remaining <= RATIO_EPS]
+        out.update(state="blocked", hours=0.0,
+                   stopped_by="cooldown" if state.account_holds else (spent[0] if spent else "model_hold"))
+    return out
+
+
+def _every_request(calc: GroupCalc) -> bool:
+    """A limit every request of the family needs: the family's own, of every
+    model and every request kind."""
+    return applicability_basis(calc) == "own" and calc.request_scope == "universal"
+
+
+def _hold_relation(acct: _Account, names: Sequence[str]) -> str:
+    """How a model hold stands to the account's measured mix, by the model
+    names they share — never by the identity of the whole list: ``stops``
+    when it covers every model of a model-scoped limit the mix consumed (the
+    part of the mix that used that limit cannot run); ``apart`` when it names
+    only models of model-scoped limits the mix could not consume (at their
+    limit all through the stretch); else ``unknown`` — the mix may or may not
+    have used the held models, and its share of them is not attributed."""
+    held = set(names)
+    if not held:
+        return "unknown"
+    unused: Set[str] = set()
+    for lim in acct.limits:
+        if lim.member is None or applicability_basis(lim.calc) != "named_models":
+            continue
+        if lim.binding and set(lim.calc.all_models) <= held:
+            return "stops"
+        if not lim.binding and lim.rate == 0.0:
+            unused.update(lim.calc.all_models)
+    return "apart" if held <= unused else "unknown"
+
+
+def _initial_state(acct: _Account, now: float, end: float) -> _State:
+    return _State(
+        remaining={lim.calc.key: lim.remaining for lim in acct.limits if lim.member is not None},
+        resets={lim.calc.key: lim.reset for lim in acct.limits
+                if lim.member is not None and lim.reset is not None and now < lim.reset <= end},
+        account_holds=list(acct.account_holds),
+        model_holds=list(acct.model_holds),
+    )
+
+
+def _mix_blocked(acct: _Account, state: _State) -> bool:
+    """Whether the account's recent mix is stopped: the account cannot run or
+    cools down as a whole, a limit the mix consumes is spent, or a model
+    hold covers a limit the mix consumes."""
+    if acct.not_running or state.account_holds:
+        return True
+    if any(_every_request(lim.calc) and lim.member is not None
+           and (state.remaining.get(lim.calc.key) or 0.0) <= RATIO_EPS for lim in acct.limits):
+        return True
+    binding = [lim for lim in acct.limits if lim.binding]
+    if any((state.remaining.get(lim.calc.key) or 0.0) <= RATIO_EPS for lim in binding):
+        return True
+    return any(_hold_relation(acct, names) == "stops" for _kind, _scope, names, _until in state.model_holds)
+
+
+def _hours(acct: _Account, state: _State) -> Optional[float]:
+    if not acct.calibrated:
+        return None
+    if _mix_blocked(acct, state):
+        return 0.0
+    return min(state.remaining[lim.calc.key] / lim.rate for lim in acct.limits if lim.binding)
+
+
+def _eligibility(acct: _Account, option: ModelOption, kind: str, state: _State
+                 ) -> Tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """One account, one model choice, one moment: the four states in their
+    order — cannot run at all; held by quota (an applicable limit at its
+    limit, a cooldown, a model hold); incomplete (a limit that applies with
+    no current reading, a limit of unknown scope the account carries,
+    whatever it reads, an account list not read now); else no known
+    restriction. Every reason is kept, whichever state wins."""
+    blockers: List[Dict[str, Any]] = []
+    reasons: List[Dict[str, Any]] = []
+    if not acct.state_known:
+        reasons.append({"why": "account_state_unknown"})
+    if option.unproven:
+        # No limit read is known to bind this choice — say, the shared
+        # limits of a family that reported only model-scoped ones: nothing
+        # shows it has quota, so it is never free.
+        reasons.append({"why": "no_limit_known_to_apply"})
+    for lim in acct.limits:
+        verdict = lim.applies.get(option.key, "unknown")
+        if verdict == "not_applicable":
+            continue
+        key = lim.calc.key
+        if lim.member is None:
+            if verdict == "applies":
+                reasons.append({"why": "no_reading_of_limit", "limit": key})
+            continue
+        left = state.remaining.get(key)
+        if verdict == "unknown":
+            # A limit this account carries whose scope is unknown: whatever
+            # it reads, nobody can say whether it binds this choice.
+            reasons.append({"why": "unknown_scope", "limit": key, "reading": (
+                "not_current" if left is None else "spent" if left <= RATIO_EPS else "has_quota")})
+        elif left is None:
+            reasons.append({"why": "no_current_reading", "limit": key})
+        elif left <= RATIO_EPS:
+            blockers.append({"kind": "limit", "limit": key, "until": state.resets.get(key)})
+    for until in state.account_holds:
+        blockers.append({"kind": "cooldown", "until": until})
+    for hold_kind, scope, names, until in state.model_holds:
+        if option.rep is not None and option.rep in names:
+            blockers.append({"kind": "model_hold", "hold": hold_kind, "scope": scope, "until": until})
+    if acct.not_running:
+        word = "not_running"
+    elif blockers:
+        word = "blocked"
+    elif reasons:
+        word = "incomplete"
+    else:
+        word = "no_known_block"
+    return word, blockers, reasons
+
+
+def _simulate(acct: _Account, options: Sequence[ModelOption], kind: str, now: float, end: float,
+              burn: bool) -> Dict[str, Any]:
+    """One account's conditional future to ``end``: only the next reported
+    reset of each limit (refilling that limit alone), the reported ends of
+    cooldowns and model holds, and — when ``burn`` and the account's mix was
+    measured — the moments the mix, repeated at its own rates, exhausts a
+    limit it consumes. Every limit the mix consumes is used together, only
+    while the mix is not stopped; nothing is used while it is. Events at one
+    instant apply together, then everything is judged again. No later reset,
+    no reset credit, no other account taking over the work."""
+    state = _initial_state(acct, now, end)
+    active_burn = burn and acct.calibrated
+    hours = _hours(acct, state)
+    vertices: List[Tuple[float, Optional[float], Optional[float]]] = [(now, hours, hours)]
+    states: List[Tuple[float, Dict[str, str]]] = [
+        (now, {o.key: _eligibility(acct, o, kind, state)[0] for o in options})]
+    events: List[Tuple[float, str, str]] = []
+    t = now
+    for _guard in range(4 * (len(acct.limits) + len(acct.model_holds) + len(acct.account_holds)) + 8):
+        if t >= end:
+            break
+        candidates = [at for at in state.resets.values() if at is not None and at > t]
+        candidates += [u for u in state.account_holds if u is not None and u > t]
+        candidates += [u for _k, _s, _n, u in state.model_holds if u is not None and u > t]
+        using = active_burn and not _mix_blocked(acct, state)
+        if using:
+            candidates.append(t + min(state.remaining[lim.calc.key] / lim.rate
+                                      for lim in acct.limits if lim.binding) * 3600.0)
+        step = min([c for c in candidates if c <= end] or [end])
+        if using:
+            for lim in acct.limits:
+                if lim.binding:
+                    left = state.remaining[lim.calc.key] - lim.rate * (step - t) / 3600.0
+                    state.remaining[lim.calc.key] = 0.0 if left <= RATIO_EPS else left
+        before = _hours(acct, state)
+        happened: List[Tuple[str, str]] = []
+        if using:
+            for lim in acct.limits:
+                if lim.binding and state.remaining[lim.calc.key] <= RATIO_EPS:
+                    happened.append(("exhausted", lim.calc.key))
+        for key, at in list(state.resets.items()):
+            if at is not None and abs(at - step) <= 1e-6:
+                if state.remaining.get(key) is not None:
+                    state.remaining[key] = 1.0
+                state.resets[key] = None
+                happened.append(("reset", key))
+        ended = [u for u in state.account_holds if u is not None and abs(u - step) <= 1e-6]
+        if ended:
+            state.account_holds = [u for u in state.account_holds if not (u is not None and abs(u - step) <= 1e-6)]
+            happened.append(("cooldown_end", ""))
+        ending = [h for h in state.model_holds if h[3] is not None and abs(h[3] - step) <= 1e-6]
+        if ending:
+            state.model_holds = [h for h in state.model_holds if h not in ending]
+            happened.extend(("model_hold_end", h[1]) for h in ending)
+        after = _hours(acct, state)
+        vertices.append((step, before, after))
+        if happened:
+            states.append((step, {o.key: _eligibility(acct, o, kind, state)[0] for o in options}))
+            events.extend((step, what, key) for what, key in happened)
+        t = step
+    return {"vertices": vertices, "states": states, "events": events}
+
+
+def _pl_value(vertices: Sequence[Tuple[float, Optional[float], Optional[float]]], at: float,
+              right: bool) -> Optional[float]:
+    """A piecewise-linear account line at ``at``: (t, value just before, value
+    just after) vertices, straight between one vertex's after and the next
+    one's before."""
+    if not vertices:
+        return None
+    for index, (t, before, after) in enumerate(vertices):
+        if abs(t - at) <= 1e-6:
+            return after if right else before
+        if t > at:
+            if index == 0:
+                return None
+            t0, _b0, a0 = vertices[index - 1]
+            if a0 is None or before is None:
+                return None
+            return a0 + (before - a0) * (at - t0) / (t - t0)
+    return vertices[-1][2]
+
+
+def _account_model(norm: Normalized, calcs: Sequence[GroupCalc], subject: Tuple[str, str],
+                   members: Dict[str, Member], options: Sequence[ModelOption], kind: str,
+                   now: float) -> _Account:
+    not_running, known = _running_state(norm, subject)
+    limits = []
+    for calc in calcs:
+        member = members.get(calc.key)
+        lim = _Limit(calc=calc, member=member, applies={o.key: applies_to(calc, o, kind) for o in options},
+                     mix=applies_to_mix(calc))
+        if member is not None and member.status == "measured" and member.reading is not None:
+            lim.remaining = member.remaining
+            lim.reset = member.reading.resets_at
+        limits.append(lim)
+    return _Account(subject=subject, not_running=not_running, state_known=known, limits=limits,
+                    account_holds=list(norm.account_cooldowns.get(subject, [])),
+                    model_holds=list(norm.model_holds.get(subject, [])))
+
+
+def _blocker_out(blocker: Dict[str, Any]) -> Dict[str, Any]:
+    out = {"kind": blocker["kind"], "until": iso(blocker.get("until"))}
+    if blocker.get("limit"):
+        out["limit"] = blocker["limit"]
+    if blocker.get("hold"):
+        out["hold"] = blocker["hold"]
+    return out
+
+
+def _unlock(word: str, blockers: Sequence[Dict[str, Any]]) -> Optional[float]:
+    """When every quota hold of a held account has a reported end: the
+    latest of them — the moment it may run again if nothing more is used,
+    as reported now. None when any end is unknown, or it is not held."""
+    if word != "blocked" or not blockers:
+        return None
+    ends = [b.get("until") for b in blockers]
+    return None if any(end is None for end in ends) else max(ends)
+
+
+def _together_family(norm: Normalized, calcs: List[GroupCalc], harness: str, kind: str,
+                     now: float, named: bool, wanted: str = "") -> Optional[Dict[str, Any]]:
+    subjects = {(h, s) for (h, s) in norm.accounts if h == harness}
+    members: Dict[Tuple[str, str], Dict[str, Member]] = {}
+    for calc in calcs:
+        for member in calc.slots:
+            subjects.add((member.harness, member.subject_id))
+            members.setdefault((member.harness, member.subject_id), {})[calc.key] = member
+    if not calcs or not subjects:
+        return None
+    holds = [hold for subject in sorted(subjects) for hold in norm.model_holds.get(subject, [])]
+    options, omitted = model_options(calcs, holds, wanted)
+    for option in options:
+        option.unproven = not any(applies_to(calc, option, kind) == "applies" for calc in calcs)
+    accounts = [_account_model(norm, calcs, subject, members.get(subject, {}), options, kind, now)
+                for subject in sorted(subjects)]
+    for acct in accounts:
+        acct.workload = _calibrate(acct, now)
+    end = float(round(now + TOGETHER_SPAN_SEC))
+
+    option_out: List[Dict[str, Any]] = []
+    per_account: Dict[Tuple[str, str], Dict[str, Any]] = {acct.subject: {} for acct in accounts}
+    for option in options:
+        counts: Counter = Counter()
+        blocked_by: Counter = Counter()
+        incomplete_by: Counter = Counter()
+        unlocks: List[float] = []
+        unknown_unlock = 0
+        for acct in accounts:
+            state = _initial_state(acct, now, float("inf"))
+            word, blockers, reasons = _eligibility(acct, option, kind, state)
+            counts[word] += 1
+            if word == "blocked":
+                for mark in {b.get("limit") or b["kind"] for b in blockers}:
+                    blocked_by[mark] += 1
+            if word == "incomplete":
+                for why in {r["why"] for r in reasons}:
+                    incomplete_by[why] += 1
+            unlock = _unlock(word, blockers)
+            if word == "blocked":
+                if unlock is None:
+                    unknown_unlock += 1
+                else:
+                    unlocks.append(unlock)
+            per_account[acct.subject][option.key] = {
+                "state": word, "blockers": [_blocker_out(b) for b in blockers], "reasons": reasons,
+                "unlock_at": iso(unlock), "unlock_with_unread": bool(unlock is not None and reasons),
+            }
+        verdicts = {lim.calc.key: lim.applies[option.key] for lim in accounts[0].limits} if accounts else {}
+        soonest = min(unlocks) if unlocks else None
+        option_out.append({
+            "key": option.key,
+            "models": [name[:MAX_TEXT] for name in option.models[:MAX_MODELS]],
+            "models_omitted": max(0, len(option.models) - MAX_MODELS),
+            "named_elsewhere": option.named_elsewhere,
+            "windows": [k for k, v in verdicts.items() if v == "applies"],
+            "unknown_windows": [k for k, v in verdicts.items() if v == "unknown"],
+            "not_applicable": [k for k, v in verdicts.items() if v == "not_applicable"],
+            "accounts": len(accounts),
+            "counts": {word: counts.get(word, 0) for word in TOGETHER_STATES},
+            "blocked_by": dict(sorted(blocked_by.items())),
+            "incomplete_by": dict(sorted(incomplete_by.items())),
+            "next_unlock": ({"at": iso(soonest), "accounts": sum(1 for u in unlocks if u - soonest <= RESET_TOLERANCE_SEC)}
+                            if soonest is not None else None),
+            "unlock_unknown": unknown_unlock,
+        })
+
+    calibrated = [acct for acct in accounts if acct.calibrated]
+    considered = [acct for acct in accounts if acct.workload.get("state") not in ("not_running", "no_reading")]
+    not_calibrated: Counter = Counter(
+        acct.workload.get("reason") or acct.workload.get("state") for acct in considered if not acct.calibrated)
+    identities: Counter = Counter()
+    for acct in calibrated:
+        account = norm.accounts.get(acct.subject)
+        if account is not None and account.identity:
+            identities[account.identity] += 1
+    workload = {
+        "unit": WORKLOAD_UNIT,
+        "hours": _round(sum(acct.workload["hours"] for acct in calibrated)) if calibrated else None,
+        "accounts_calibrated": len(calibrated),
+        "accounts_considered": len(considered),
+        "accounts_blocked": sum(1 for acct in calibrated if acct.workload["state"] == "blocked"),
+        "not_calibrated": dict(sorted(not_calibrated.items())),
+        # Two profiles signed in to one vendor account may draw on one pool:
+        # their hours may be one budget counted twice. Said, never merged.
+        "possible_duplicates": sum(count for count in identities.values() if count > 1),
+    }
+
+    scenarios: Dict[str, Any] = {}
+    for mode in ("no_new_use", "recent_load"):
+        runs = {acct.subject: _simulate(acct, options, kind, now, end, burn=mode == "recent_load")
+                for acct in accounts}
+        times = sorted({now, end} | {t for run in runs.values() for t, _b, _a in run["vertices"]}
+                       | {t for run in runs.values() for t, _w, _k in run["events"]})
+
+        def family_hours(at: float, right: bool) -> Optional[float]:
+            if not calibrated:
+                return None
+            values = [_pl_value(runs[acct.subject]["vertices"], at, right) for acct in calibrated]
+            return None if any(v is None for v in values) else sum(values)
+
+        def family_counts(at: float) -> Dict[str, int]:
+            out: Dict[str, int] = {option.key: 0 for option in options}
+            for acct in accounts:
+                states = runs[acct.subject]["states"]
+                words = states[0][1]
+                for t, later in states:
+                    if t <= at + 1e-6:
+                        words = later
+                    else:
+                        break
+                for option in options:
+                    out[option.key] += words[option.key] == "no_known_block"
+            return out
+
+        # Every moment's free counts, once: the count lines and the events
+        # read them at the exact moments the accounts' futures have.
+        counts_at = {t: family_counts(t) for t in times}
+        line = None
+        if calibrated:
+            line = []
+            for t in times:
+                left, right = family_hours(t, False), family_hours(t, True)
+                stamp = _instant(t)
+                if t == now:
+                    line.append([stamp, _round(right, 4)])
+                    continue
+                line.append([stamp, _round(left, 4)])
+                if left is not None and right is not None and abs(right - left) > 1e-9:
+                    line.append([stamp, _round(right, 4)])
+        count_lines: Dict[str, List[List[Any]]] = {}
+        for option in options:
+            steps: List[List[Any]] = []
+            for t in times:
+                value = counts_at[t][option.key]
+                if not steps or steps[-1][1] != value or t == end:
+                    steps.append([_instant(t), value])
+            count_lines[option.key] = steps
+        # The accounts' events, grouped by the exact moment their futures
+        # give them — within 1e-6 s, as one future judges events "at once" —
+        # and judged at that moment. A moment rounded first would be judged
+        # before an exhaustion or a refill that falls between: the free
+        # count and the jump in hours there would be lost.
+        grouped: List[Tuple[float, Counter]] = []
+        for t, what, key in sorted(event for run in runs.values() for event in run["events"]):
+            if not grouped or t - grouped[-1][0] > 1e-6:
+                grouped.append((t, Counter()))
+            grouped[-1][1][(what, key)] += 1
+        events = []
+        for t, changes in grouped[:MAX_TOGETHER_EVENTS]:
+            events.append({
+                "at": _instant(t),
+                "changes": [dict({"kind": what, "accounts": n}, **({"limit": key} if what in ("reset", "exhausted")
+                                                                    else {"scope": key} if key else {}))
+                            for (what, key), n in sorted(changes.items())],
+                # Just before and just after it: an event that moves
+                # neither, nor the counts, changes nothing together.
+                "hours_before": _round(family_hours(t, False), 4),
+                "hours_after": _round(family_hours(t, True), 4),
+                "counts_after": dict(counts_at[t]),
+            })
+        scenarios[mode] = {
+            "end": round(end),
+            "hours_line": line,
+            "counts": count_lines,
+            "events": events,
+            "events_omitted": max(0, len(grouped) - MAX_TOGETHER_EVENTS),
+            "checkpoints": [{"after_seconds": round(offset), "at": round(now + offset),
+                             "hours": _round(family_hours(float(round(now + offset)), True), 4),
+                             "counts": family_counts(float(round(now + offset)))}
+                            for offset in TOGETHER_CHECKPOINTS if round(now + offset) <= end],
+            "accounts_calibrated": len(calibrated),
+            # With the recent load, the accounts whose mix was not measured
+            # are held as they are: nothing is spent for them.
+            "held": len(accounts) - len(calibrated) if mode == "recent_load" else len(accounts),
+        }
+
+    out: Dict[str, Any] = {
+        "harness": harness,
+        "family": norm.families.get(harness, harness),
+        "request_kind": kind,
+        "accounts": len(accounts),
+        "options": option_out,
+        "options_omitted": omitted,
+        "workload": workload,
+        "scenarios": scenarios,
+    }
+    if named:
+        out["account_states"] = [{
+            "account": account_key(*acct.subject),
+            "options": per_account[acct.subject],
+            "workload": acct.workload,
+        } for acct in accounts]
+    return out
+
+
+def build_together(state: SummaryState, request_kind: str = DEFAULT_REQUEST_KIND,
+                   named: bool = False, model: str = "") -> List[Dict[str, Any]]:
+    """Per family: which accounts each model choice could run on now, held by
+    what and until when; how many account-hours each account's own recent
+    mix could still run; and both conditional futures. ``named`` adds each
+    account's verdicts under its widget key (the widget route only);
+    ``model``, a full name asked for (the tool), is kept as a choice even past
+    the bound on choices."""
+    kind = str(request_kind or DEFAULT_REQUEST_KIND).strip()[:MAX_TEXT] or DEFAULT_REQUEST_KIND
+    wanted = str(model or "").strip()
+    out = []
+    order = list(state.norm.harness_order)
+    for calc in state.groups:
+        if calc.harness not in order:
+            order.append(calc.harness)
+    for harness in order:
+        calcs = [calc for calc in state.groups if calc.harness == harness]
+        family = _together_family(state.norm, calcs, harness, kind, state.now, named, wanted)
+        if family is not None:
+            out.append(family)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Compact form for the model tool
 
 
@@ -3107,10 +3992,167 @@ def _headline(group: Dict[str, Any]) -> str:
     return "; ".join(parts) + "."
 
 
-def compact(summary: Dict[str, Any], harness: str = "", detail: bool = False) -> Dict[str, Any]:
+TOOL_EVENTS = 6
+
+
+def _limit_names(summary: Dict[str, Any]) -> Dict[str, str]:
+    """A limit's words for the tool: its label, length and model scope."""
+    out = {}
+    for group in summary.get("groups", []):
+        scope = ""
+        if group.get("models"):
+            scope = "; models " + ", ".join(group["models"][:4]) + (" +more" if len(group["models"]) > 4
+                                                                   or group.get("models_omitted") else "")
+        elif group.get("model_scope") == "names_unknown":
+            scope = "; model-scoped, names unavailable"
+        out[group["key"]] = f"{group.get('label')} ({group.get('duration')}{scope})"
+    return out
+
+
+def _option_words(option: Dict[str, Any]) -> str:
+    if option["key"] == "other":
+        return "shared limits (models no model-scoped limit names)" if option.get("named_elsewhere") \
+            else "all models"
+    return "model " + ", ".join(option.get("models") or [])
+
+
+def _together_headline(family: Dict[str, Any], option: Dict[str, Any], names: Dict[str, str]) -> str:
+    """One sentence per family and model choice, from the same fields."""
+    counts = option["counts"]
+    parts = [f"{family.get('family')} for {_option_words(option)}: {counts['no_known_block']} of "
+             f"{option['accounts']} accounts with no known restriction"]
+    if counts["blocked"]:
+        held = ", ".join(f"{names.get(mark, mark)} {n}" for mark, n in option["blocked_by"].items())
+        parts.append(f"{counts['blocked']} held by quota ({held})")
+    if counts["incomplete"]:
+        parts.append(f"{counts['incomplete']} incomplete (" + ", ".join(
+            f"{why} {n}" for why, n in option["incomplete_by"].items()) + ")")
+    if counts["not_running"]:
+        parts.append(f"{counts['not_running']} not running (switched off, signed out or failing its check)")
+    if option.get("next_unlock"):
+        parts.append(f"next conditional unlock {option['next_unlock']['at']} "
+                     f"({option['next_unlock']['accounts']} account(s), if nothing more is used)")
+    if option.get("unlock_unknown"):
+        parts.append(f"{option['unlock_unknown']} held with an unreported end")
+    return "; ".join(parts) + "."
+
+
+def _workload_headline(family: Dict[str, Any]) -> str:
+    w = family["workload"]
+    if w.get("hours") is None:
+        return (f"{family.get('family')}: no account-hours estimate — the recent mix of none of "
+                f"{w['accounts_considered']} accounts could be measured (not_calibrated says why).")
+    return (f"{family.get('family')}: about {w['hours']} account-hours of each account repeating its own "
+            f"recent mix, from {w['accounts_calibrated']} of {w['accounts_considered']} accounts; not hours of "
+            "one model; only reported resets, nothing more used elsewhere.")
+
+
+def _compact_together(family: Dict[str, Any], names: Dict[str, str], model: str) -> Dict[str, Any]:
+    every = family.get("options", [])
+    note = ""
+    shared = [o for o in every if o["key"] == "other"]
+    if model:
+        options = [o for o in every if model in (o.get("models") or [])]
+        if not options:
+            options = shared
+            note = f"{model!r} is named by no model-scoped limit or hold: only the shared limits apply"
+    else:
+        # The shared limits in full — the default, never a model chosen for
+        # the reader; each named model in counts only — ask with ``model``
+        # for one in full.
+        options = shared
+    out_options = []
+    for option in options:
+        row: Dict[str, Any] = {
+            "key": option["key"],
+            "models": option.get("models", []),
+            "counts": option["counts"],
+            "limits_applying": [names.get(k, k) for k in option.get("windows", [])],
+            "headline": _together_headline(family, option, names),
+        }
+        if option.get("unknown_windows"):
+            row["limits_of_unknown_applicability"] = [names.get(k, k) for k in option["unknown_windows"]]
+        if option.get("not_applicable"):
+            row["limits_not_applying"] = [names.get(k, k) for k in option["not_applicable"]]
+        if option.get("blocked_by"):
+            row["held_by"] = {names.get(k, k): n for k, n in option["blocked_by"].items()}
+        if option.get("incomplete_by"):
+            row["incomplete_by"] = option["incomplete_by"]
+        if option.get("next_unlock"):
+            row["next_conditional_unlock"] = option["next_unlock"]
+        if option.get("unlock_unknown"):
+            row["held_with_unreported_end"] = option["unlock_unknown"]
+        out_options.append(row)
+    keys = {o["key"] for o in options}
+
+    def events(mode: str) -> List[Dict[str, Any]]:
+        """The first events that change something together: the free count
+        of a choice shown, a jump in the account-hours, or a limit the mix
+        runs out. A refill that changes neither is counted, not listed."""
+        sc = (family.get("scenarios") or {}).get(mode) or {}
+        rows = []
+        quiet = 0
+        before = {o["key"]: o["counts"]["no_known_block"] for o in options}
+        for event in sc.get("events") or []:
+            after = {k: v for k, v in event.get("counts_after", {}).items() if k in keys}
+            hours = (event.get("hours_after") is not None and event.get("hours_before") is not None
+                     and abs(event["hours_after"] - event["hours_before"]) >= 0.05)
+            moved = after != before or hours or any(c["kind"] == "exhausted" for c in event["changes"])
+            before = after
+            if not moved:
+                quiet += 1
+                continue
+            if len(rows) >= TOOL_EVENTS:
+                continue
+            rows.append({
+                "at": iso(event["at"]),
+                "changes": [dict(change, limit=names.get(change["limit"], change["limit"]))
+                            if change.get("limit") else change for change in event["changes"]],
+                "account_hours_after": event.get("hours_after"),
+                "no_known_restriction_after": after,
+            })
+        if quiet:
+            rows.append({"refills_changing_nothing_together": quiet})
+        if sc.get("events_omitted"):
+            # Past the answer's first events, the rest are not in it: said by
+            # count, with where every reported reset is, never cut silently.
+            rows.append({"later_events_not_listed": sc["events_omitted"],
+                         "every_reported_reset": "groups[].reset_schedule, with detail"})
+        return rows
+
+    out: Dict[str, Any] = {
+        "family": family.get("family"),
+        "request_kind": family.get("request_kind"),
+        "options": out_options,
+        "workload": {k: v for k, v in family["workload"].items() if v not in (None, {}, 0) or k == "hours"},
+        "workload_headline": _workload_headline(family),
+        "events_if_no_new_use": events("no_new_use"),
+        "events_at_recent_load": events("recent_load"),
+        "assumptions": "Per account first: an account serves a model only while every limit that applies "
+                       "has quota; unknown readings or scopes are incomplete, never positive. Futures use "
+                       "only each limit's next reported reset (full refill of that limit alone), reported "
+                       "cooldown and model-hold ends and, at the recent load, each account's own measured "
+                       "mix used together while it is not stopped. No later reset, credit or rerouting.",
+    }
+    shown = {o["key"] for o in options}
+    others = [{"model": o["models"][0], "counts": o["counts"]} for o in every
+              if o["key"] not in shown and o.get("models")]
+    if others:
+        out["named_models"] = others
+    if note:
+        out["model_note"] = note
+    if family.get("options_omitted"):
+        out["options_omitted"] = family["options_omitted"]
+    return out
+
+
+def compact(summary: Dict[str, Any], harness: str = "", detail: bool = False,
+            model: str = "") -> Dict[str, Any]:
     """The tool's projection of :func:`build_summary`: the same numbers, fewer
-    fields, zero counts dropped. ``detail`` adds plan breakdowns and the
-    per-reason pace counts."""
+    fields, zero counts dropped. ``detail`` adds plan breakdowns, each
+    limit's whole reset schedule and the per-reason pace counts; ``model``
+    keeps, of what the limits allow together, only the choice that names it
+    (else the shared limits)."""
     wanted = str(harness or "").strip().lower()
     groups = []
     for group in summary.get("groups", []):
@@ -3150,6 +4192,10 @@ def compact(summary: Dict[str, Any], harness: str = "", detail: bool = False) ->
             row["mixed_plans"] = True
             if detail:
                 row["plans"] = group["plans"]["breakdown"]
+        if detail and group.get("reset_schedule"):
+            # Every reported reset of the limit, current and last-known apart:
+            # the whole schedule the futures' first events are drawn from.
+            row["reset_schedule"] = group["reset_schedule"]
         if group["possible_duplicates"]:
             row["possible_duplicate_sign_ins"] = group["possible_duplicates"]
         if group["reset_unknown"]:
@@ -3181,6 +4227,12 @@ def compact(summary: Dict[str, Any], harness: str = "", detail: bool = False) ->
         extra["cached_facets"] = summary["cached"]
     if summary.get("roster") and summary.get("roster") != "current":
         extra["roster"] = summary["roster"]
+    names = _limit_names(summary)
+    model_name = str(model or "").strip()[:MAX_TEXT]
+    together = [_compact_together(family, names, model_name) for family in summary.get("together", [])
+                if not wanted or str(family.get("harness", "")).lower() == wanted]
+    if together:
+        extra["together"] = together
     return {
         "generated_at": summary.get("generated_at"),
         "status_read_at": summary.get("status_read_at"),
