@@ -1033,19 +1033,11 @@ const calls = [];
   const chartReady = () => !/Loading the chart for this limit/.test(text())
     && walk(root).some((n) => n.getAttribute('class') === 'chart-svg');
 
-  await waitFor(() => /0\.70 of 1/.test(text()), 'first reading');
-  // 0.10.0: the timeline is open on every mount, on the limits together: the
-  // first read asks for no chart of one limit.
-  assert.equal(calls.length, 1);
-  assert.match(calls[0].url, /chart=0/);
-  assert.doesNotMatch(calls[0].url, /reuse=1/);
-  assert.equal(byFocus(root, 'limit:joint').getAttribute('aria-pressed'), 'true');
-  // The limit's own record, on its row's control: its own span (a week) is
-  // asked for once, with reuse, from the same status read.
-  const limitControl = walk(root).find((n) => /^limit:/.test(String(n.getAttribute('data-focus') || ''))
-    && n.getAttribute('data-focus') !== 'limit:joint');
-  limitControl.listeners.click[0]({ stopPropagation() {} });
-  await waitFor(() => calls.length === 2 && chartReady(), 'the limit\'s own timeline');
+  await waitFor(() => /0\.70 of 1/.test(text()) && chartReady(), 'first reading with its timeline');
+  assert.doesNotMatch(calls[0].url, /reuse=1|chart=0/);
+  // 0.8.0: the timeline is open on every mount; its limit's own span (a week)
+  // is asked for once, with reuse, from the same status read.
+  assert.equal(calls.length, 2);
   assert.match(calls[1].url, /reuse=1/);
   assert.match(calls[1].url, /horizon=7d/);
   byFocus(root, 'accounts').listeners.click[0]({ stopPropagation() {} });
@@ -1256,11 +1248,7 @@ NODE_ADVISORY_MATRIX = r"""
   // With a restriction present, the unrestricted account-windows stand beside it.
   assert.match(heard, /1 cooldown reported \(0\.70\)/);
   assert.match(heard, /0\.50 unrestricted/);
-  // The limit in the timeline says the same in its details (0.10.0: the
-  // timeline opens on the limits together; the limit's own is its row's
-  // control away).
-  byFocus(env.root, 'limit:' + fixture.reserve.chart.group_key).listeners.click[0]({ stopPropagation() {} });
-  await settle();
+  // The limit in the timeline says the same in its details.
   const details = classes(env.root, 'chart-table')[0];
   assert.ok(details, 'the timeline carries the limit details');
   assert.match(details.textContent, /1 cooldown reported \(0\.70\)/);

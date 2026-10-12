@@ -1,4 +1,4 @@
-/* Claudexor Quotas widget — v0.10.0
+/* Claudexor Quotas widget — v0.9.0
  *
  * Runs as a reviewed module widget: a classic inline script inside an
  * opaque-origin sandboxed iframe whose window.fetch is a parent-mediated
@@ -18,17 +18,6 @@
  * control slot at its right edge (the chart toggle, the timeline's only one);
  * the unit is said by the figure and the title, the future's assumption by
  * the legend, each once. No number, request or route changed.
- *
- * 0.10.0: the limits taken together. A "Together" row above the limits says,
- * per account and model choice, who has no known restriction when every
- * applicable limit is taken at once, what holds the rest and until when, and
- * how many account-hours each account's own recent mix could still run; the
- * one timeline opens on that on every mount — over a day when every event of
- * its future falls within one — and each limit's own record is its row's
- * control away. Every row says its
- * next reported reset with its date and opens its schedule in place. A limit
- * known only from the history folds under "Other limits". The selected
- * account's card opens right under the row (or list row) that selected it.
  */
 (function () {
     'use strict';
@@ -49,19 +38,14 @@
     var FACET_ORDER = ['catalog', 'accounts', 'quota'];
     var TONE_WORD = { ok: 'ready', warn: 'needs a look', bad: 'alert', muted: 'no live reading' };
     // How far the timeline looks back and ahead. Not a saved choice: each
-    // mount opens on the view's own span — for a limit, a week when it is
-    // longer than a day, else a day; for the limits together, a day when
-    // every event of its future falls within one, else a week — until the
-    // reader picks one.
+    // mount opens on the limit's own span — a week for a limit longer than a
+    // day, else a day — until the reader picks one.
     var HORIZONS = ['24h', '7d'];
     // The two futures the timeline can draw, both of the accounts read now.
     var SCENARIOS = [
         { key: 'no_new_use', name: 'No new use' },
         { key: 'recent_pace', name: 'Recent pace' }
     ];
-    // The timeline's family-level view: the limits taken together.
-    var JOINT_KEY = 'joint';
-    var JOINT_SCENARIO = { no_new_use: 'no_new_use', recent_pace: 'recent_load' };
 
     var root = document.getElementById('root');
     var generation = 0;
@@ -80,35 +64,15 @@
     // The bar or account-list row that selected it (its data-focus key):
     // where Clear and Escape give the keyboard back (clearAccount).
     var selectionOpener = '';
-    // Where the selected account's card stands: right under the row that
-    // selected it ('row:<limit key>'), the Together row ('joint') or the
-    // account list ('list') — before that row's timeline. Its name and its
-    // family's, kept to say so if the account leaves the account list
-    // (vanished), its whole family with it or not.
-    var selectionOrigin = '';
-    var selectedLabel = '';
-    var selectedFamily = '';
-    var vanished = null;
-    // Per family, the model choice of the Together row ('other': the shared
-    // limits); which rows have their reset schedule open; whether the limits
-    // known only from the history are unfolded; and the one panel a click has
-    // just opened — a card, a reset list, "Other limits" or a timeline —
-    // which alone eases in (never a poll's redraw, never a mount).
-    var jointOption = {};
-    var schedulesOpen = {};
-    var otherOpen = false;
-    var jointAll = false;
-    var revealNext = '';
     var accountsOpen = false;
     var diagnosticsOpen = false;
     var aboutOpen = false;
     var currentView = null;
     var staleMessage = '';
     var actionMessage = '';
-    // The timeline: open on every mount. Its view per family is the one the
-    // reader picked, else the limits taken together (else, with no Together
-    // view in the answer, the family's "lowest left"); the horizon is the
-    // reader's pick ('' = the view's own); the scenario starts at "no new
+    // The timeline: open on every mount. Its limit per family is the one the
+    // reader picked, else the family's "lowest left"; the horizon is the
+    // reader's pick ('' = the limit's own); the scenario starts at "no new
     // use". The last chart request asked on the reader's behalf is kept so a
     // mismatch is asked about once, never in a loop.
     var timelineOpen = true;
@@ -224,16 +188,16 @@
         // Every row is the same shape: name and figure, bars and their caption,
         // the tail — and one control slot of one width at the right edge, so
         // the chart toggles of all rows stand in one column.
-        ".lrow,.jrow{display:grid;grid-template-columns:minmax(0,1fr) auto var(--ctl-w);grid-template-areas:\"name fig ctl\" \"strip sub ctl\" \"tail tail tail\";column-gap:var(--space-3);row-gap:6px;padding:var(--space-3) var(--space-2);border-bottom:1px solid var(--edge)}",
+        ".lrow{display:grid;grid-template-columns:minmax(0,1fr) auto var(--ctl-w);grid-template-areas:\"name fig ctl\" \"strip sub ctl\" \"tail tail tail\";column-gap:var(--space-3);row-gap:6px;padding:var(--space-3) var(--space-2);border-bottom:1px solid var(--edge)}",
         // The charted row and its timeline are one shaded block: no rule between them.
-        ".lrow.sel,.jrow.sel{background:var(--inset);border-bottom-color:transparent}",
+        ".lrow.sel{background:var(--inset);border-bottom-color:transparent}",
         ".l-name{grid-area:name;justify-self:start;align-self:start;display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px;min-width:0;max-width:100%;overflow-wrap:anywhere;font-size:var(--type-body);font-weight:500;line-height:1.35}",
         ".lrow.sel .l-name{font-weight:600}",
         // The row's one control: its chart, shown or hidden. The same width
         // in every row, whatever it says.
-        ".l-chart,.j-chart{grid-area:ctl;align-self:center;justify-self:stretch;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:26px;padding:2px 8px;border:1px solid var(--edge);border-radius:999px;background:var(--surface);color:var(--text-meta);font-size:var(--type-meta);font-weight:400;line-height:1.35;white-space:nowrap}",
-        ".l-chart:hover,.j-chart:hover{background:var(--inset);color:var(--text-primary)}",
-        ".l-chart.on,.j-chart.on{background:var(--inset);border-color:var(--edge-strong);color:var(--text-primary);font-weight:600}",
+        ".l-chart{grid-area:ctl;align-self:center;justify-self:stretch;display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:26px;padding:2px 8px;border:1px solid var(--edge);border-radius:999px;background:var(--surface);color:var(--text-meta);font-size:var(--type-meta);font-weight:400;line-height:1.35;white-space:nowrap}",
+        ".l-chart:hover{background:var(--inset);color:var(--text-primary)}",
+        ".l-chart.on{background:var(--inset);border-color:var(--edge-strong);color:var(--text-primary);font-weight:600}",
         ".rs-tight{font-size:var(--type-meta);color:var(--text-meta);font-weight:400;white-space:nowrap}",
         ".l-fig{grid-area:fig;justify-self:end;white-space:nowrap;line-height:1.35}",
         ".l-fig b{font-size:var(--type-section);font-weight:600;font-variant-numeric:tabular-nums}",
@@ -415,54 +379,14 @@
         ".empty-title{font-size:var(--type-section);font-weight:500;margin:0}",
         ".empty-desc{font-size:var(--type-meta);color:var(--text-meta);max-width:360px;margin:0}",
         ".empty-notes{display:flex;gap:var(--space-3);flex-wrap:wrap}",
-        // 0.10.0. The Together row: one small square per account — its state
-        // for the chosen model, never a share (a share is a bar's height).
-        ".jrow{border-bottom-color:var(--edge-strong)}",
-        ".jrow .l-name{font-weight:600}",
-        // The picker stays inside the name's track: a full model name
-        // (claude-sonnet-4-5-20250929) narrows the select, whose own text
-        // clips before its arrow, never the chart control beside it.
-        ".j-pick{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%;font-weight:400;color:var(--text-meta);font-size:var(--type-meta)}",
-        ".j-pick>span{flex:none}",
-        ".j-pick select{flex:0 1 auto;min-width:0;max-width:220px;min-height:26px;padding:2px 6px;border:1px solid var(--edge);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-primary);font:inherit;font-size:var(--type-meta)}",
-        ".j-pick select:focus-visible{outline:2px solid var(--focus-accent-border);outline-offset:2px}",
-        ".jcells{grid-area:strip;justify-self:start;align-self:center;display:flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%;min-height:24px}",
-        ".jcell{display:block;flex:none;width:14px;height:14px;padding:0;border:0;border-radius:3px;background:var(--share-ink)}",
-        ".jcell.held{background:var(--status-warn)}",
-        ".jcell.incomplete{background:transparent;box-shadow:inset 0 0 0 1.5px rgba(var(--neutral-rgb),.45)}",
-        ".jcell.off{background:rgba(var(--neutral-rgb),.06) var(--hatch);box-shadow:inset 0 0 0 1px var(--edge)}",
-        ".jcell.sel{outline:2px solid var(--text-primary);outline-offset:1px}",
-        ".jcell:hover{filter:brightness(.85)}",
-        // A row's reported resets, opened in place under it.
-        ".rs-open{display:inline;padding:0 2px;margin:0;border:0;background:none;color:var(--text-primary);font-size:inherit;text-decoration:underline;text-decoration-color:var(--edge-strong);text-underline-offset:3px}",
-        ".sched-block{padding:var(--space-1) var(--space-2) var(--space-3) var(--space-4);border-bottom:1px solid var(--edge);font-size:var(--type-meta);color:var(--text-meta)}",
-        ".sched-block .sched-title{color:var(--text-primary);font-weight:500;margin-bottom:var(--space-1)}",
-        ".sched-list{list-style:none;margin:0;padding:0;columns:2 260px;column-gap:var(--space-5);font-variant-numeric:tabular-nums}",
-        ".sched-list li{display:flex;flex-wrap:wrap;gap:0 var(--space-2);break-inside:avoid;padding:1px 0}",
-        ".sched-list .sw{color:var(--text-primary)}",
-        ".sched-list .last-k{color:var(--warn-text)}",
-        ".sched-note{margin-top:var(--space-1)}",
-        // Limits known only from the history: one line, opened on request.
-        ".other-head{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;padding:var(--space-2);border-bottom:1px solid var(--edge);font-size:var(--type-meta);color:var(--text-meta)}",
-        ".other-rows{border-left:2px solid var(--edge)}",
-        // The selected account, anchored under what selected it.
-        ".lrows .inspector,.lrows .vanished,.accounts .inspector{margin:var(--space-2) 0 var(--space-3)}",
-        ".j-verdict{display:flex;align-items:flex-start;gap:6px;margin-top:var(--space-2);font-size:var(--type-body);color:var(--text-primary);overflow-wrap:anywhere}",
-        ".j-verdict .state-dot{margin-top:7px}",
-        ".j-verdict-note{margin-top:2px;font-size:var(--type-meta);color:var(--text-meta);overflow-wrap:anywhere}",
-        ".vanished{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;margin:var(--space-2) 0;padding:var(--space-2) var(--space-3);border:1px dashed var(--edge-strong);border-radius:var(--radius-md);font-size:var(--type-meta);color:var(--text-meta)}",
-        // One restrained entrance, only for what a click has just opened.
-        "@keyframes q-reveal{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}",
-        ".reveal{animation:q-reveal .16s cubic-bezier(.2,0,0,1)}",
-        "@media(prefers-reduced-motion:reduce){.reveal{animation:none}}",
         // Give dense strips a full row before the figure and fixed control
         // column leave less room than their individual bars need.
-        "@media(max-width:640px){.lrow,.jrow{grid-template-areas:\"name fig ctl\" \"sub sub ctl\" \"strip strip strip\" \"tail tail tail\";}.l-sub{justify-self:start;text-align:left;white-space:normal}.bars{justify-self:stretch;width:auto!important}}",
-        "@media(max-width:520px){body{padding:var(--space-3)}.tl-block{padding-inline:4px}.lrow,.jrow{column-gap:var(--space-2);padding:10px 4px}.acct-lim{grid-template-columns:72px 40px 40px minmax(0,1fr);column-gap:var(--space-2)}.reserve-head{display:block}.reserve-age{text-align:left;margin-top:2px}.inspector,.accounts,.about-panel{padding:var(--space-3)}.acc-headrow{display:none}.acc-row{display:flex!important;flex-wrap:wrap;gap:2px var(--space-2);padding:6px 0}.acc-name{flex:1 1 100%}.acc-cell{text-align:left}.acc-cell:before{content:attr(data-limit) \" \";color:var(--text-meta)}.reserve-detail{grid-template-columns:minmax(0,1fr);gap:2px}.reserve-detail dd{margin-bottom:var(--space-2)}}",
+        "@media(max-width:640px){.lrow{grid-template-areas:\"name fig ctl\" \"sub sub ctl\" \"strip strip strip\" \"tail tail tail\";}.l-sub{justify-self:start;text-align:left;white-space:normal}.bars{justify-self:stretch;width:auto!important}}",
+        "@media(max-width:520px){body{padding:var(--space-3)}.tl-block{padding-inline:4px}.lrow{column-gap:var(--space-2);padding:10px 4px}.acct-lim{grid-template-columns:72px 40px 40px minmax(0,1fr);column-gap:var(--space-2)}.reserve-head{display:block}.reserve-age{text-align:left;margin-top:2px}.inspector,.accounts,.about-panel{padding:var(--space-3)}.acc-headrow{display:none}.acc-row{display:flex!important;flex-wrap:wrap;gap:2px var(--space-2);padding:6px 0}.acc-name{flex:1 1 100%}.acc-cell{text-align:left}.acc-cell:before{content:attr(data-limit) \" \";color:var(--text-meta)}.reserve-detail{grid-template-columns:minmax(0,1fr);gap:2px}.reserve-detail dd{margin-bottom:var(--space-2)}}",
         // Narrower still, the figure and its caption each take a line of their
         // own under the name (sharing one line left them overlapping at a
         // 343 px card); the control spans the name and the figure.
-        "@media(max-width:360px){.lrow,.jrow{grid-template-areas:\"name name ctl\" \"fig fig ctl\" \"sub sub sub\" \"strip strip strip\" \"tail tail tail\"}.l-fig{justify-self:start;white-space:normal}}"
+        "@media(max-width:360px){.lrow{grid-template-areas:\"name name ctl\" \"fig fig ctl\" \"sub sub sub\" \"strip strip strip\" \"tail tail tail\"}.l-fig{justify-self:start;white-space:normal}}"
     ].join('');
 
     function el(tag, cls, text) {
@@ -1554,95 +1478,19 @@
         return null;
     }
 
-    /* What the family's limits allow together (quota_summary.build_together):
-       per account and model choice first, the family's counts only after. */
-
-    function togetherOf(view, harnessId) {
-        var summary = view && view.reserve && view.reserve.summary;
-        var all = (summary && Array.isArray(summary.together)) ? summary.together : [];
-        for (var i = 0; i < all.length; i++) {
-            if (all[i] && all[i].harness === harnessId) return (all[i].options || []).length ? all[i] : null;
-        }
-        return null;
-    }
-
-    // The model choice on screen: the reader's, while the answer still has
-    // it; else the shared limits — never the most restrictive model's.
-    function jointOptionOf(fam) {
-        var options = (fam && fam.options) || [];
-        var want = fam ? jointOption[fam.harness] : '';
-        var i;
-        for (i = 0; i < options.length; i++) if (options[i].key === want) return options[i];
-        for (i = 0; i < options.length; i++) if (options[i].key === 'other') return options[i];
-        return options[0] || null;
-    }
-
-    function optionName(option) {
-        if (!option) return '';
-        if (option.key === 'other') return option.named_elsewhere ? 'Shared limits' : 'All models';
-        return String((option.models || [])[0] || option.key);
-    }
-
-    function jointAccount(fam, accountKey) {
-        var rows = (fam && fam.account_states) || [];
-        for (var i = 0; i < rows.length; i++) if (rows[i] && rows[i].account === accountKey) return rows[i];
-        return null;
-    }
-
-    var JOINT_RANK = { no_known_block: 0, blocked: 1, incomplete: 2, not_running: 3 };
-    var JOINT_TONE = { no_known_block: 'ok', blocked: 'warn', incomplete: 'muted', not_running: 'muted' };
-
-    // A limit known only from the local history — the quota facet was read
-    // now and named it for no account — folds under "Other limits". Never
-    // when the quota facet failed or was not read (every limit would be
-    // known only from the history then), never a limit read stale now, and
-    // never every limit of the family.
-    function foldedKeys(summary, groups) {
-        var reads = (summary && summary.reads) || {};
-        var cached = (summary && summary.cached) || {};
-        if (reads.quota !== 'ok' || cached.quota) return {};
-        var out = {};
-        var kept = 0;
-        groups.forEach(function (g) {
-            if (g.restored_from_history === true) out[g.key] = true;
-            else kept++;
-        });
-        return kept ? out : {};
-    }
-
-    // After "until" or "again": the local date first, how far off after it.
-    function untilWhen(iso) {
-        var when = whenWords(iso);
-        if (!when) return '';
-        var rel = relTime(iso);
-        return Date.parse(String(iso)) > Date.now() && rel ? when + ' (' + rel + ')' : when;
-    }
-
-    // A reported moment near its row: how far off, then the local date.
-    function resetWhen(iso) {
-        var when = whenWords(iso);
-        if (!when) return '';
-        var rel = relTime(iso);
-        return Date.parse(String(iso)) > Date.now() && rel ? rel + ' · ' + when : when;
-    }
-
-    // What the timeline shows for a family: the reader's pick, as long as it
-    // still exists; else the limits taken together — what the family's
-    // limits allow at once, the view the reader came for; else, with no
-    // Together view in the answer (a kept screen), the family's lowest left,
-    // the rule the skill applies when asked for no limit. The view it opens
-    // on is kept as a pick is: an answer during an outage that has no
-    // Together view, or names another limit "lowest left", does not move it;
-    // only a click, or its absence from a whole answer, chooses again. Each
-    // limit's own record is one click away, on its row.
-    function chartKeyFor(harnessId, groups, fam) {
+    // The limit the timeline shows for a family: the one the reader picked,
+    // as long as it still exists, else the family's lowest left — the rule
+    // the skill applies when asked for none. The limit it opens on is kept as
+    // a pick is: an answer during an outage that names another limit "lowest
+    // left" does not move it; only a click, or the limit's absence from a
+    // whole answer, chooses again.
+    function chartKeyFor(harnessId, groups) {
         var picked = chartKeys[harnessId];
         var i;
-        if (picked === JOINT_KEY && fam) return picked;
         for (i = 0; i < groups.length; i++) {
             if (groups[i].key === picked) return picked;
         }
-        var key = fam ? JOINT_KEY : '';
+        var key = '';
         for (i = 0; i < groups.length && !key; i++) if (groups[i].tightest) key = groups[i].key;
         for (i = 0; i < groups.length && !key; i++) {
             if (groups[i].measured && groups[i].measured.accounts) key = groups[i].key;
@@ -1661,33 +1509,15 @@
         return g && typeof g.window_seconds === 'number' && g.window_seconds > 86400 ? '7d' : '24h';
     }
 
-    // The span of the limits-together timeline: the reader's pick, else a day
-    // when every reported event of the future on screen falls within it — the
-    // shape of what changes, not a week of flat line after it — else a week.
-    // A limit's own timeline keeps its own span (horizonFor).
-    function jointHorizonFor(fam, now) {
-        if (horizonChoice) return horizonChoice;
-        var sc = ((fam && fam.scenarios) || {})[JOINT_SCENARIO[scenario] || 'no_new_use'];
-        var events = (sc && sc.events) || [];
-        if (!events.length || sc.events_omitted) return '7d';
-        return events.every(function (e) { return typeof e.at === 'number' && e.at <= now + 86400; }) ? '24h' : '7d';
-    }
-
     function reserveUrl(reuse) {
         var parts = [];
         if (selectedHarness) parts.push('harness=' + encodeURIComponent(selectedHarness));
-        var groups = selectedHarness ? reserveGroups(currentView, selectedHarness) : [];
-        var key = selectedHarness && timelineOpen
-            ? chartKeyFor(selectedHarness, groups, togetherOf(currentView, selectedHarness)) : '';
-        // Before an answer has named the family, the timeline will open on
-        // the limits taken together: no chart of one limit is asked for yet.
-        if (!selectedHarness && timelineOpen) key = JOINT_KEY;
-        if (timelineOpen && key !== JOINT_KEY) {
+        if (timelineOpen) {
+            var groups = selectedHarness ? reserveGroups(currentView, selectedHarness) : [];
+            var key = selectedHarness ? chartKeyFor(selectedHarness, groups) : '';
             if (key) parts.push('group=' + encodeURIComponent(key));
             parts.push('horizon=' + encodeURIComponent(horizonFor(groupByKey(groups, key))));
         } else {
-            // The limits taken together come with every summary: no chart of
-            // one limit, nor its longer history read, is needed for them.
             // The timeline is folded: the skill need not draw it, nor read the
             // longer stretch of history it would need.
             parts.push('chart=0');
@@ -1700,8 +1530,7 @@
         if (!timelineOpen) return false;
         var groups = reserveGroups(view, selectedHarness);
         if (!groups.length) return false;
-        var key = chartKeyFor(selectedHarness, groups, togetherOf(view, selectedHarness));
-        if (key === JOINT_KEY) return false;
+        var key = chartKeyFor(selectedHarness, groups);
         var chart = view.reserve.chart;
         return !chart || chart.group_key !== key || chart.horizon !== horizonFor(groupByKey(groups, key));
     }
@@ -1786,12 +1615,6 @@
         if (models.length) return (name.pool && name.model) ? name.model : (modelLabel(models, g.models_omitted) || models[0]);
         // Tied to models whose names the history did not keep: still scoped.
         if (g.model_scope === 'names_unknown') return 'model-scoped';
-        // A pool of its own namespace, said in words — never named after a
-        // shared limit it is not ("Weekly" twice).
-        if (g.applicability_basis === 'foreign_namespace') {
-            var space = String(g.meaning || '').split(':')[0].replace(/_/g, ' ').trim();
-            if (space) return space;
-        }
         return name.pool ? name.model : '';
     }
 
@@ -2018,7 +1841,7 @@
                 b.addEventListener('click', function (e) {
                     e.stopPropagation();
                     selectAccount(bar.account === selectedAccountKey ? '' : bar.account,
-                        'bar:' + g.key + ':' + bar.account, 'row:' + g.key);
+                        'bar:' + g.key + ':' + bar.account);
                     restoreFocus('bar:' + g.key + ':' + bar.account);
                 });
             } else {
@@ -2029,15 +1852,10 @@
         return strip;
     }
 
-    function selectAccount(key, opener, origin) {
-        var fresh = !!key && key !== selectedAccountKey;
+    function selectAccount(key, opener) {
         selectedAccountKey = key || '';
         selectionOpener = selectedAccountKey ? (opener || '') : '';
-        if (selectedAccountKey) selectionOrigin = origin || selectionOrigin || 'joint';
-        vanished = null;
         diagnosticsOpen = false;
-        // The card eases in only when a click opened or changed it.
-        if (fresh) revealNext = 'inspector';
         rerender();
     }
 
@@ -2100,34 +1918,17 @@
         var unknown = bars.filter(function (b) { return b.state === 'unknown'; }).length;
         if (unknown) out.push({ text: unknown + ' unknown — not counted', tone: '' });
         var m = g.measured || {};
-        var sched = g.reset_schedule || null;
-        var dated = (sched && sched.last_known) || [];
-        var ahead = dated.filter(function (e) { return !e.passed; });
-        var reset = null;
         if (g.next_reset && g.next_reset.at) {
             var n = g.next_reset.accounts || 0;
             var back = g.next_reset_returns >= 0.005 ? amountWords(g.next_reset_returns) : '';
-            reset = { text: 'next reset ' + resetWhen(g.next_reset.at)
+            out.push({ text: 'next reset ' + whenWords(g.next_reset.at)
                 + (n > 1 ? ' · ' + n + ' accounts' : '')
                 + (back ? ' · +' + back + ' if unused' : ''), tone: '',
                 title: 'The soonest reported reset of a current account'
                     + (back ? ': a full refill then gives back the ' + back + ' account-windows '
-                        + (n === 1 ? 'it uses' : 'they use') + ' now, if nothing more is used before it' : '') + '.' };
-        } else if (ahead.length || dated.length) {
-            // Only dated readings report one: said as theirs, never current.
-            var lk = ahead[0] || dated[dated.length - 1];
-            reset = { text: lk.passed ? 'last reported reset ' + whenWords(lk.at) + ' has passed — not read since'
-                : 'last reported reset ' + resetWhen(lk.at) + (lk.accounts > 1 ? ' · ' + lk.accounts + ' accounts' : ''),
-                tone: '', title: 'Reported by a last-known reading, not a current one. A reset that has passed is a '
-                    + 'reset expected with no reading since — never a refill.' };
+                        + (n === 1 ? 'it uses' : 'they use') + ' now, if nothing more is used before it' : '') + '.' });
         } else if (m.accounts && g.reset_unknown === m.accounts) {
-            reset = { text: 'no reset time reported', tone: '' };
-        }
-        if (reset) {
-            // Every reported reset of the row, opened in place under it.
-            var any = sched && ((sched.current || []).length || dated.length || sched.current_without_reset);
-            if (any) reset.schedule = true;
-            out.push(reset);
+            out.push({ text: 'no reset time reported', tone: '' });
         }
         return out;
     }
@@ -2193,7 +1994,6 @@
             // On the charted limit the control folds its timeline or unfolds
             // it; on another it shows that limit's instead.
             timelineOpen = picked ? !timelineOpen : true;
-            if (timelineOpen) revealNext = 'timeline';
             chartAsked = '';
             chartCursor = null;
             rerender();
@@ -2233,377 +2033,12 @@
         var tail = el('div', 'l-tail');
         words.forEach(function (w, i) {
             if (i) tail.appendChild(el('span', null, ' · '));
-            var part;
-            if (w.schedule) {
-                // The reset opens the row's whole schedule right under it.
-                var open = !!schedulesOpen[g.key];
-                part = el('button', 'rs-open', w.text + (open ? ' ▾' : ' ▸'));
-                part.setAttribute('type', 'button');
-                part.setAttribute('data-focus', 'sched:' + g.key);
-                part.setAttribute('aria-expanded', open ? 'true' : 'false');
-                part.setAttribute('aria-label', w.text + ' — ' + (open ? 'hide' : 'show') + ' every reported reset of ' + name);
-                part.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    schedulesOpen[g.key] = !schedulesOpen[g.key];
-                    if (schedulesOpen[g.key]) revealNext = 'sched:' + g.key;
-                    rerender();
-                    restoreFocus('sched:' + g.key);
-                });
-            } else {
-                part = el('span', w.tone ? 'rs-' + w.tone : null, w.text);
-            }
+            var part = el('span', w.tone ? 'rs-' + w.tone : null, w.text);
             if (w.title) part.title = w.title;
             tail.appendChild(part);
         });
         row.appendChild(tail);
         return row;
-    }
-
-    // Every reported reset of one limit, without a chart: the current
-    // readings' next resets, and apart the ones last-known readings
-    // reported (a passed one is a reset expected with no reading since).
-    // Manual reset credits are another count, never one of these.
-    function scheduleBlock(g, name, family) {
-        var sched = g.reset_schedule || {};
-        var box = el('div', 'sched-block' + (revealNext === 'sched:' + g.key ? ' reveal' : ''));
-        box.setAttribute('role', 'group');
-        box.setAttribute('aria-label', 'Reported resets of ' + name);
-        box.appendChild(el('div', 'sched-title', 'Reported resets · ' + name));
-        var list = el('ul', 'sched-list');
-        (sched.current || []).forEach(function (e) {
-            var li = el('li');
-            li.appendChild(el('span', 'sw', resetWhen(e.at) + (e.last && clockAt(e.last) !== clockAt(e.at)
-                ? '–' + clockAt(e.last) : '')));
-            li.appendChild(el('span', null, plural(e.accounts, 'account') + ' · current reading'));
-            list.appendChild(li);
-        });
-        (sched.last_known || []).forEach(function (e) {
-            var li = el('li');
-            li.appendChild(el('span', 'sw', e.passed ? whenWords(e.at) : resetWhen(e.at)));
-            li.appendChild(el('span', 'last-k', plural(e.accounts, 'account') + ' · ' + (e.passed
-                ? 'reported by a last-known reading; passed — not read since, refill not observed'
-                : 'reported by a last-known reading, not current')));
-            list.appendChild(li);
-        });
-        if (list.firstChild) box.appendChild(list);
-        var notes = [];
-        if (sched.current_without_reset) {
-            notes.push(plural(sched.current_without_reset, 'current account') + ' report'
-                + (sched.current_without_reset === 1 ? 's' : '') + ' no reset time: no refill assumed.');
-        }
-        notes.push('Each reset refills this limit alone; another limit can still hold an account (see Together).');
-        var credits = family && family.reset_credits;
-        if (credits && (credits.current_accounts || credits.last_known_accounts)) {
-            notes.push('Manual reset credits are a separate count, never one of these resets.');
-        }
-        notes.forEach(function (text) { box.appendChild(el('div', 'sched-note', text)); });
-        return box;
-    }
-
-    /* ------------------------------------------------------------------
-       Together: every limit of an account at once (0.10.0).
-       ------------------------------------------------------------------ */
-
-    function limitWord(key, ctx) {
-        return (ctx && ctx.names && ctx.names[key]) || 'a limit';
-    }
-
-    function blockerWords(b, ctx) {
-        var what = b.kind === 'limit' ? limitWord(b.limit, ctx) + ' at the limit'
-            : (b.kind === 'cooldown' ? 'a cooldown'
-                : (b.hold === 'model_limit' ? 'a model limit reported reached' : 'a model cooldown'));
-        if (b.until) return what + ' until ' + untilWhen(b.until);
-        return what + (b.kind === 'limit' ? ', no reset time reported' : ', end not reported');
-    }
-
-    var UNKNOWN_SCOPE_READING = {
-        has_quota: 'has quota', spent: 'at its limit', not_current: 'not read now'
-    };
-
-    function reasonWords(r, ctx) {
-        if (r.why === 'no_current_reading') return 'no current reading of ' + limitWord(r.limit, ctx);
-        if (r.why === 'no_reading_of_limit') return 'no reading of ' + limitWord(r.limit, ctx) + ' (it may not apply)';
-        if (r.why === 'unknown_scope') {
-            return limitWord(r.limit, ctx) + ': what it applies to is unknown ('
-                + (UNKNOWN_SCOPE_READING[r.reading] || 'its reading unknown') + ')';
-        }
-        if (r.why === 'account_state_unknown') return 'the account list was not read now';
-        if (r.why === 'no_limit_known_to_apply') return 'no limit read is known to apply to it, so nothing shows it has quota';
-        return String(r.why || 'unknown');
-    }
-
-    var NOT_RUNNING_WORDS = { disabled: 'switched off in Claudexor', signed_out: 'not signed in',
-                              auth_failed: 'verification failed' };
-
-    // One account under one model choice: what it says first, in words.
-    function verdictWords(st, option, ctx, account) {
-        var name = optionName(option);
-        if (!st) return { tone: 'muted', text: 'Not in the together view of ' + name + '.' };
-        if (st.state === 'not_running') {
-            var why = [];
-            if (account && account.enabled === false) why.push(NOT_RUNNING_WORDS.disabled);
-            if (account && !account.signed_in) why.push(NOT_RUNNING_WORDS.signed_out);
-            if (account && verificationFailed(account)) why.push(NOT_RUNNING_WORDS.auth_failed);
-            return { tone: 'muted', text: 'Not running' + (why.length ? ': ' + why.join(', ') : '')
-                + ' — a quota reset does not change that.' };
-        }
-        if (st.state === 'blocked') {
-            var note = st.unlock_at
-                ? 'May run again ' + untilWhen(st.unlock_at) + ', once every hold above has ended — if nothing more is '
-                    + 'used. Reported times; only the next reading confirms it.'
-                    + (st.unlock_with_unread ? ' Some of its limits are not read now.' : '')
-                : 'When it may run again is unknown: a hold has no reported end.';
-            return { tone: 'warn', text: 'Held for ' + name + ': '
-                + (st.blockers || []).map(function (b) { return blockerWords(b, ctx); }).join('; ') + '.', note: note };
-        }
-        if (st.state === 'incomplete') {
-            return { tone: 'muted', text: 'Incomplete for ' + name + ': '
-                + (st.reasons || []).map(function (r) { return reasonWords(r, ctx); }).join('; ') + '.',
-                note: 'Nothing unread is counted as free, nor as held.' };
-        }
-        return { tone: 'ok', text: 'No known restriction for ' + name + '.'
-            + ((st.reasons || []).length ? ' (' + st.reasons.map(function (r) { return reasonWords(r, ctx); }).join('; ') + ')' : '') };
-    }
-
-    var WORK_WHY = {
-        pace_unknown: 'not measured yet: some of its limits have no comparable readings in the last hour',
-        no_common_interval: 'not measured: its limits were not read over one common stretch of 15 minutes',
-        no_change_observed: 'not measured: a limit showed no change over the common stretch, so its share of the mix is unknown',
-        shared_limit_spent: 'not measured: a limit every request needs was at its limit all through the stretch',
-        model_hold_unmeasured: 'not measured: a model hold names models its recent mix may or may not have used',
-        no_current_reading: 'not measured: a limit of it has no current reading',
-        no_reading_of_limit: 'not measured: it has no reading of a limit of its family that may apply',
-        unknown_scope: 'not measured: it carries a limit whose scope is unknown',
-        sources_differ: 'not measured: its limits were paced from different sources',
-        account_state_unknown: 'not measured: the account list was not read now'
-    };
-
-    // The account's own recent mix, repeated: never hours of one model.
-    function workloadWords(w, ctx) {
-        if (!w || w.state === 'not_running' || w.state === 'no_reading') return '';
-        if (w.state === 'ok') {
-            return 'Its recent mix could run about ' + num(w.hours, 1) + ' h more before '
-                + limitWord(w.binding, ctx) + ' runs out — this account repeating its own recent work, not hours of one model.';
-        }
-        if (w.state === 'blocked') {
-            var stop = w.stopped_by === 'cooldown' ? 'a cooldown holds the whole account'
-                : (w.stopped_by === 'model_hold' ? 'a model hold covers a limit that mix used'
-                    : limitWord(w.stopped_by || w.binding, ctx) + ', which that mix also used, is at its limit');
-            return 'Its recent mix cannot run now: ' + stop + ' — whichever model is chosen above.';
-        }
-        return 'Account-hours ' + (WORK_WHY[w.reason] || WORK_WHY[w.state] || 'not measured') + '.';
-    }
-
-    // The Together row: one square per account — free, held, incomplete or
-    // not running for the chosen model — the count with no known
-    // restriction, the account-hours of the accounts' own recent mix, what
-    // holds the rest and the next conditional unlock. Its control shows the
-    // one timeline as the limits taken together.
-    function jointRow(fam, ctx, chartKey) {
-        var option = jointOptionOf(fam);
-        var inChart = timelineOpen && chartKey === JOINT_KEY;
-        var row = el('div', 'jrow' + (inChart ? ' sel' : ''));
-        var name = 'Together · ' + optionName(option);
-        var nameBox = el('div', 'l-name');
-        nameBox.appendChild(el('span', 'l-name-text', 'Together'));
-        var options = fam.options || [];
-        if (options.length > 1) {
-            var pick = el('label', 'j-pick');
-            pick.appendChild(el('span', null, 'for'));
-            var select = el('select');
-            select.setAttribute('data-focus', 'joint-option');
-            select.setAttribute('aria-label', 'Which model the limits are taken together for');
-            options.forEach(function (o) {
-                var opt = el('option', null, optionName(o));
-                opt.value = o.key;
-                if (o.key === option.key) opt.selected = true;
-                select.appendChild(opt);
-            });
-            select.value = option.key;
-            // A long name clips in a narrow card; the open list has it whole.
-            select.title = optionName(option);
-            select.addEventListener('change', function (e) {
-                if (e && e.stopPropagation) e.stopPropagation();
-                jointOption[fam.harness] = select.value;
-                rerender();
-                restoreFocus('joint-option');
-            });
-            pick.appendChild(select);
-            nameBox.appendChild(pick);
-        } else {
-            nameBox.appendChild(el('span', 'rs-tight', optionName(option).toLowerCase()));
-        }
-        row.appendChild(nameBox);
-
-        var counts = option.counts || {};
-        var free = counts.no_known_block || 0;
-        var total = option.accounts || 0;
-        var work = fam.workload || {};
-        var control = el('button', 'j-chart' + (inChart ? ' on' : ''), inChart ? 'Hide chart' : 'Show chart');
-        control.insertBefore(icon('chart', 12), control.firstChild);
-        control.setAttribute('type', 'button');
-        control.setAttribute('data-focus', 'limit:' + JOINT_KEY);
-        control.setAttribute('aria-pressed', inChart ? 'true' : 'false');
-        var tail = jointTail(fam, option, ctx);
-        var spoken = [name, free + ' of ' + plural(total, 'account') + ' with no known restriction'];
-        if (typeof work.hours === 'number') spoken.push('about ' + num(work.hours, 1) + ' account-hours of their recent mix');
-        tail.forEach(function (t) { spoken.push(t.text); });
-        control.setAttribute('aria-label', (inChart ? 'Hide chart' : 'Show chart') + ' — ' + spoken.join(' — ')
-            + (inChart ? ' — its timeline is shown below' : ' — show the limits together over time'));
-        control.title = inChart ? 'Hide the timeline of the limits together' : 'Show the limits together over time';
-        control.addEventListener('click', function (e) {
-            e.stopPropagation();
-            var picked = chartKeys[fam.harness] === JOINT_KEY;
-            chartKeys[fam.harness] = JOINT_KEY;
-            timelineOpen = picked ? !timelineOpen : true;
-            if (timelineOpen) revealNext = 'timeline';
-            jointAll = false;
-            chartAsked = '';
-            chartCursor = null;
-            rerender();
-        });
-        row.appendChild(control);
-
-        var figure = el('div', 'l-fig');
-        figure.appendChild(el('b', null, String(free)));
-        figure.appendChild(el('span', 'of', ' of ' + plural(total, 'account')));
-        figure.title = 'Accounts with no known restriction for ' + optionName(option) + ': every limit that applies to it '
-            + 'has quota now, no cooldown or model hold covers it, and it is switched on and signed in. Held, '
-            + 'incomplete and not running accounts are not counted; nothing unread counts as free.';
-        row.appendChild(figure);
-
-        row.appendChild(jointCells(fam, option, ctx));
-
-        var sub = el('div', 'l-sub');
-        if (typeof work.hours === 'number') {
-            sub.appendChild(document.createTextNode('≈ ' + num(work.hours, 1) + ' account-h'));
-            sub.title = 'Account-hours: how long each account could repeat its own recent mix of work before a limit it '
-                + 'uses runs out, added up — from ' + work.accounts_calibrated + ' of ' + work.accounts_considered
-                + ' accounts whose mix was measured over one common stretch. Not hours of one model, not compute time.'
-                + (work.possible_duplicates ? ' ' + work.possible_duplicates + ' of them share a sign-in and may draw on one pool.' : '');
-        } else {
-            sub.appendChild(document.createTextNode('hours not measured'));
-            sub.title = 'No account’s recent mix could be measured — every limit that may bind it read now, of known '
-                + 'scope, paced from one source over one common stretch — so no account-hours are estimated, never 0. '
-                + 'The counts and every limit’s own row still hold.';
-        }
-        row.appendChild(sub);
-
-        var tailBox = el('div', 'l-tail');
-        tail.forEach(function (t, i) {
-            if (i) tailBox.appendChild(el('span', null, ' · '));
-            var part = el('span', t.tone ? 'rs-' + t.tone : null, t.text);
-            if (t.title) part.title = t.title;
-            tailBox.appendChild(part);
-        });
-        row.appendChild(tailBox);
-        return row;
-    }
-
-    function jointTail(fam, option, ctx) {
-        var out = [];
-        if (fam.options_omitted) out.push({
-            text: plural(fam.options_omitted, 'more model choice') + ' · quota_summary accepts an exact name', tone: ''
-        });
-        var counts = option.counts || {};
-        if (counts.blocked) {
-            var by = option.blocked_by || {};
-            var parts = Object.keys(by).map(function (k) {
-                var label = k === 'cooldown' ? 'cooldown' : (k === 'model_hold' ? 'model hold' : limitWord(k, ctx));
-                return label + ' ' + by[k];
-            });
-            out.push({ text: counts.blocked + ' held' + (parts.length ? ' — ' + parts.join(', ') : ''), tone: 'warn',
-                       title: 'Held by quota: a limit that applies is at its limit, or a cooldown or model hold covers it. '
-                           + 'An account held by two limits is counted under each.' });
-        }
-        if (counts.incomplete) {
-            out.push({ text: counts.incomplete + ' incomplete', tone: '',
-                       title: 'A limit that applies has no current reading, a limit of unknown scope is carried, no limit '
-                           + 'read is known to apply to this choice, or the account list was not read now: neither free '
-                           + 'nor held.' });
-        }
-        if (counts.not_running) out.push({ text: counts.not_running + ' not running', tone: '' });
-        if (option.next_unlock && option.next_unlock.at) {
-            var n = option.next_unlock.accounts || 0;
-            out.push({ text: 'earliest unlock ' + resetWhen(option.next_unlock.at) + (n > 1 ? ' · ' + n + ' accounts' : ''),
-                       tone: '', title: 'The soonest moment a held account has every hold ended, as reported now, if '
-                           + 'nothing more is used: the latest of its own resets and hold ends, not the first.' });
-        }
-        if (option.unlock_unknown) out.push({ text: option.unlock_unknown + ' held with no reported end', tone: '' });
-        var unknown = option.unknown_windows || [];
-        if (unknown.length) {
-            out.push({ text: unknown.length + (unknown.length === 1 ? ' limit' : ' limits') + ' of unknown scope', tone: '',
-                       title: unknown.map(function (k) { return limitWord(k, ctx); }).join(', ')
-                           + ': what it applies to is not reported, so an account carrying it is incomplete — never free '
-                           + 'on its account, never held by it.' });
-        }
-        return out;
-    }
-
-    function jointCells(fam, option, ctx) {
-        var strip = el('div', 'jcells');
-        strip.setAttribute('role', 'group');
-        strip.setAttribute('aria-label', 'Each account for ' + optionName(option) + ': free, held, incomplete or not running');
-        var rows = (fam.account_states || []).map(function (a) {
-            return { a: a, st: (a.options || {})[option.key] || null };
-        }).filter(function (r) { return !!r.st; });
-        rows.sort(function (x, y) {
-            return (JOINT_RANK[x.st.state] - JOINT_RANK[y.st.state])
-                || (((y.a.workload || {}).hours || 0) - ((x.a.workload || {}).hours || 0))
-                || compareText(String(x.a.account), String(y.a.account));
-        });
-        rows.forEach(function (r) {
-            var cls = { no_known_block: ' free', blocked: ' held', incomplete: ' incomplete', not_running: ' off' }[r.st.state]
-                || ' incomplete';
-            var isSel = r.a.account === selectedAccountKey;
-            var cell = el('button', 'jcell' + cls + (isSel ? ' sel' : ''));
-            cell.setAttribute('type', 'button');
-            cell.setAttribute('data-focus', 'jcell:' + r.a.account);
-            cell.setAttribute('aria-pressed', isSel ? 'true' : 'false');
-            var verdict = verdictWords(r.st, option, ctx, ctx.index[r.a.account]);
-            var work = workloadWords(r.a.workload, ctx);
-            var words = accountName(ctx.index, r.a.account) + ': ' + verdict.text + (work ? ' ' + work : '');
-            cell.title = words;
-            cell.setAttribute('aria-label', words + (isSel ? ' — selected' : ' — select this account'));
-            cell.addEventListener('click', function (e) {
-                e.stopPropagation();
-                selectAccount(isSel ? '' : r.a.account, 'jcell:' + r.a.account, JOINT_KEY);
-                restoreFocus('jcell:' + r.a.account);
-            });
-            strip.appendChild(cell);
-        });
-        return strip;
-    }
-
-    // Where a closed card stands when its account has left the account list:
-    // said once, in place, and dismissed — never a silent jump.
-    function vanishedNote() {
-        var box = el('div', 'vanished');
-        box.setAttribute('role', 'status');
-        box.appendChild(el('span', null, (vanished.label || 'The selected account') + ' is no longer in the account list'
-            + ' (read ' + clockAt(new Date(vanished.at).toISOString()) + ')'
-            + (vanished.family ? ', nor is any other ' + vanished.family + ' account' : '') + ', so its card is closed.'));
-        var ok = el('button', 'pill-btn', 'Dismiss');
-        ok.setAttribute('type', 'button');
-        ok.setAttribute('data-focus', 'vanished-ok');
-        ok.addEventListener('click', function (e) {
-            e.stopPropagation();
-            dismissVanished();
-        });
-        box.appendChild(ok);
-        return box;
-    }
-
-    function dismissVanished() {
-        var keys = [selectionOpener, 'accounts', 'harness:' + selectedHarness];
-        vanished = null;
-        rerender();
-        for (var i = 0; i < keys.length; i++) {
-            if (!keys[i]) continue;
-            restoreFocus(keys[i]);
-            var focused = document.activeElement;
-            if (focused && focused.getAttribute && focused.getAttribute('data-focus') === keys[i]) return;
-        }
     }
 
     // The one line beside the title: how much of the family is current, what
@@ -2763,28 +2198,9 @@
         parent.appendChild(row);
     }
 
-    // A limit known only from the history, in one line: its own name, its
-    // accounts, when it was last read and the reset it last reported.
-    function otherWords(g, name) {
-        var lk = g.last_known || {};
-        var parts = [name, plural(slotCount(g), 'account'), 'not in this answer'];
-        var age = ageWords(lk.newest_observed_at);
-        if (lk.newest_observed_at) parts.push('last read ' + (!age ? 'at an unreported time' : (age === 'just now' ? age : age + ' ago')));
-        var dated = ((g.reset_schedule || {}).last_known || []);
-        var ahead = dated.filter(function (e) { return !e.passed; })[0];
-        if (ahead) parts.push('last reported reset ' + resetWhen(ahead.at));
-        else if (dated.length) parts.push('reported reset ' + whenWords(dated[dated.length - 1].at) + ' passed');
-        if (g.applicability_basis === 'foreign_namespace' || g.model_scope === 'names_unknown') {
-            parts.push('what it applies to is unknown');
-        }
-        return parts.join(' · ');
-    }
-
     // The family's limits. Returns what the timeline, the selected account
     // and the account list read from — or null when there is no overview.
-    // ``placement`` stands the selected account's card (or the note that its
-    // account has left) right under the row that selected it.
-    function renderReserve(parent, reserve, family, view, placement) {
+    function renderReserve(parent, reserve, family, view) {
         if (!reserve || typeof reserve !== 'object') reserve = {};
         var section = el('section', 'reserve');
         section.setAttribute('aria-label', 'Reserve overview');
@@ -2830,75 +2246,17 @@
             return ctx;
         }
         ctx.names = limitNames(groups);
-        var fam = togetherOf({ reserve: reserve }, hid);
-        if (fam && !(fam.options || []).length) fam = null;
-        ctx.together = fam;
-        ctx.family = family;
-        var chartKey = chartKeyFor(hid, groups, fam);
+        var chartKey = chartKeyFor(hid, groups);
         var measuredGroups = groups.filter(function (g) { return g.measured && g.measured.accounts; }).length;
-        var folded = foldedKeys(summary, groups);
-        var shown = groups.filter(function (g) { return !folded[g.key]; });
-        var hidden = groups.filter(function (g) { return folded[g.key]; });
-        var visible = {};
-        shown.concat(otherOpen ? hidden : []).forEach(function (g) { visible[g.key] = true; });
-        // Where the card stands: under the row that selected it while that
-        // row is on screen; else under Together, else under the first row.
-        var origin = vanished ? vanished.origin : selectionOrigin;
-        var anchor = '';
-        if (origin === 'list') anchor = 'list';
-        else if (origin && origin.indexOf('row:') === 0 && visible[origin.slice(4)]) anchor = origin;
-        else if (fam) anchor = JOINT_KEY;
-        else if (shown.length) anchor = 'row:' + shown[0].key;
-        ctx.anchor = anchor;
         var table = el('div', 'lrows');
         table.setAttribute('role', 'group');
         table.setAttribute('aria-label', 'Limits of ' + (family ? familyName(family) : 'this family'));
-        function place(where, into) {
-            if (placement && anchor === where) placement.place(into, ctx);
-        }
-        if (fam) {
-            table.appendChild(jointRow(fam, ctx, chartKey));
-            place(JOINT_KEY, table);
-            if (chartKey === JOINT_KEY && timelineOpen) table.appendChild(jointTimelineBlock(ctx, fam));
-        }
-        function drawRow(g, into) {
-            into.appendChild(limitRow(g, ctx.names[g.key], chartKey, ctx.index, g.tightest && measuredGroups > 1));
-            if (schedulesOpen[g.key] && g.reset_schedule) into.appendChild(scheduleBlock(g, ctx.names[g.key], family));
-            place('row:' + g.key, into);
-            // The timeline of the charted limit stands right under its row
-            // (and under the card it opened); folded, it leaves nothing
-            // behind — the row's control says "Show chart".
-            if (g.key === chartKey && timelineOpen) into.appendChild(timelineBlock(ctx, g));
-        }
-        shown.forEach(function (g) { drawRow(g, table); });
-        if (hidden.length) {
-            var head = el('div', 'other-head');
-            var toggle = el('button', 'pill-btn other-toggle' + (otherOpen ? ' on' : ''));
-            toggle.appendChild(withIcon(el('span', 'pill-icon'), 'caret', 12));
-            toggle.appendChild(el('span', null, 'Other limits · ' + hidden.length));
-            toggle.setAttribute('type', 'button');
-            toggle.setAttribute('data-focus', 'other-limits');
-            toggle.setAttribute('aria-expanded', otherOpen ? 'true' : 'false');
-            var said = hidden.map(function (g) { return otherWords(g, ctx.names[g.key]); });
-            toggle.setAttribute('aria-label', (otherOpen ? 'Hide' : 'Show') + ' the limits no reading of this answer '
-                + 'names, known only from the local history: ' + said.join('; '));
-            toggle.addEventListener('click', function (e) {
-                e.stopPropagation();
-                otherOpen = !otherOpen;
-                if (otherOpen) revealNext = 'other';
-                rerender();
-                restoreFocus('other-limits');
-            });
-            head.appendChild(toggle);
-            // Open, each row says it itself.
-            if (!otherOpen) head.appendChild(el('span', null, said.join(' · ')));
-            table.appendChild(head);
-            if (otherOpen) {
-                var rows = el('div', 'other-rows' + (revealNext === 'other' ? ' reveal' : ''));
-                hidden.forEach(function (g) { drawRow(g, rows); });
-                table.appendChild(rows);
-            }
-        }
+        groups.forEach(function (g) {
+            table.appendChild(limitRow(g, ctx.names[g.key], chartKey, ctx.index, g.tightest && measuredGroups > 1));
+            // The timeline of the charted limit stands right under its row;
+            // folded, it leaves nothing behind — the row's control says "Show chart".
+            if (g.key === chartKey && timelineOpen) table.appendChild(timelineBlock(ctx, g));
+        });
         section.appendChild(table);
         var keptAt = (view && view.kept) || summary.roster === 'cached'
             ? String((summary.cached || {}).accounts || '') : null;
@@ -2973,292 +2331,13 @@
         return seg;
     }
 
-    // The one timeline as the limits taken together: ahead of now only (no
-    // joint record is kept), the account-hours of every measured account
-    // repeating its own recent mix, in the future chosen beside it — no new
-    // use, or that mix continued — and, for the model chosen in the
-    // Together row, what changes when. With no account measured there is no
-    // line, never a flat zero: the events and each limit's own row stay.
-    function jointTimelineBlock(ctx, fam) {
-        // A timeline a click has just opened eases in, once; a poll, a mount
-        // or a change of span or future redraws it in place.
-        var box = el('div', 'tl-block' + (revealNext === 'timeline' ? ' reveal' : ''));
-        box.setAttribute('role', 'group');
-        box.setAttribute('aria-label', 'Timeline of the limits together');
-        var option = jointOptionOf(fam);
-        var summary = currentView && currentView.reserve && currentView.reserve.summary;
-        var now = Math.round(Date.parse(String((summary && summary.generated_at) || '')) / 1000);
-        if (!isFinite(now)) now = Math.round(Date.now() / 1000);
-        var horizon = jointHorizonFor(fam, now);
-        var controls = el('div', 'tl-controls');
-        controls.appendChild(segControl('Span', HORIZONS.map(function (h) {
-            return { key: h, name: h === '24h' ? '24 h' : '7 days', spoken: (h === '24h' ? '24 hours' : '7 days') + ' ahead' };
-        }), horizon, 'horizon:', function (picked) {
-            horizonChoice = picked;
-            chartCursor = null;
-            rerender();
-        }));
-        controls.appendChild(segControl('Future', [
-            { key: 'no_new_use', name: 'No new use', title: 'Nothing more is used: holds end and limits refill only at their reported times' },
-            { key: 'recent_pace', name: 'Recent load', title: 'Each measured account repeats its own recent mix while nothing stops it; the others are held' }
-        ], scenario, 'scenario:', function (picked) {
-            scenario = picked;
-            rerender();
-        }));
-        box.appendChild(controls);
-        var work = fam.workload || {};
-        // The unit and its coverage, in one line; what they assume is under
-        // Details.
-        var scope = el('div', 'tl-scope', 'Account-hours · each account repeating its own recent mix, not hours of one model · ');
-        scope.appendChild(el('b', null, (work.accounts_calibrated || 0) + ' of ' + plural(work.accounts_considered || 0, 'account')
-            + ' measured'));
-        box.appendChild(scope);
-        var sc = (fam.scenarios || {})[JOINT_SCENARIO[scenario] || 'no_new_use'];
-        if (!sc) {
-            box.appendChild(el('div', 'reserve-note', 'No future of the limits together in this answer.'));
-            return box;
-        }
-        var end = now + (horizon === '24h' ? 86400 : 604800);
-        var line = clipLine(sc.hours_line, now, end);
-        // What changes together: an event that moves the free count of the
-        // model chosen or the account-hours. A reset that changes neither —
-        // a 5-hour refill while the weekly limit holds — is said apart, as
-        // the refill of one limit it is.
-        var events = [];
-        var marks = [];
-        var idle = 0;
-        var freeBefore = ((option.counts || {}).no_known_block) || 0;
-        (sc.events || []).forEach(function (e) {
-            if (e.at > end + 1e-6) return;
-            var free = (e.counts_after || {})[option.key];
-            var jump = typeof e.hours_after === 'number' && typeof e.hours_before === 'number'
-                && Math.abs(e.hours_after - e.hours_before) >= 0.05;
-            var ranOut = (e.changes || []).some(function (c) { return c.kind === 'exhausted'; });
-            if (free !== freeBefore || jump || ranOut) events.push(e);
-            else idle += 1;
-            // The chart marks only the moments the free count moves.
-            if (free !== freeBefore) marks.push({ at: e.at });
-            freeBefore = free;
-        });
-        if (line && line.length && work.accounts_calibrated) {
-            var max = 0;
-            line.forEach(function (p) { if (typeof p[1] === 'number' && p[1] > max) max = p[1]; });
-            var chart = { group_key: JOINT_KEY, horizon: horizon, start: now, end: end, now: now,
-                          y_max: Math.max(1, Math.ceil(max)), past: [], history: null, future_only: true,
-                          unit_aria: 'account-hours of each measured account repeating its own recent mix',
-                          unit_foot: 'account-hours, ' + work.accounts_calibrated + ' of '
-                              + plural(work.accounts_considered || 0, 'account') + ' measured' };
-            drawChart(box, 'the limits together', chart, { line: line, schedule: marks });
-            var legend = el('div', 'chart-legend');
-            var item = el('span', 'legend-item');
-            item.appendChild(legendSwatch('line-scenario'));
-            item.appendChild(el('span', null, (scenario === 'no_new_use'
-                ? 'no new use · limits refill and holds end at their reported times, once'
-                : 'recent load · measured accounts repeat their own mix while nothing stops them')));
-            legend.appendChild(item);
-            box.appendChild(legend);
-            var points = (sc.checkpoints || []).filter(function (cp) { return cp.at <= end && typeof cp.hours === 'number'; });
-            if (points.length) {
-                var cpLine = el('div', 'checkpoints');
-                cpLine.appendChild(document.createTextNode('Account-hours ' + (scenario === 'no_new_use'
-                    ? 'if nothing more is used: ' : 'at the recent load: ')));
-                points.forEach(function (cp, i) {
-                    if (i) cpLine.appendChild(document.createTextNode(' · '));
-                    cpLine.appendChild(document.createTextNode(offsetWords(cp.after_seconds) + ' '));
-                    cpLine.appendChild(el('b', null, '≈ ' + num(cp.hours, 1)));
-                });
-                box.appendChild(cpLine);
-            }
-        } else {
-            box.appendChild(el('div', 'reserve-note', 'No account-hours: the recent mix of none of '
-                + plural(work.accounts_considered || 0, 'account') + ' could be measured — never a zero; why, under '
-                + 'Details. What changes when is below; each limit’s own row keeps its timeline.'));
-        }
-        box.appendChild(jointEventsTable(events, option, ctx, line && work.accounts_calibrated));
-        if (idle) {
-            box.appendChild(el('div', 'schedule-notes', '+ ' + idle + (idle === 1 ? ' reported reset or hold end changes'
-                : ' reported resets or hold ends change') + ' nothing together in this span · each row lists its resets'));
-        }
-        // The answer carries the first events of a future only: when it cut
-        // some inside this span, say how many — the table, its marks and the
-        // count above stop there; the line does not.
-        var published = sc.events || [];
-        var cut = sc.events_omitted || 0;
-        if (cut && (!published.length || published[published.length - 1].at <= end)) {
-            box.appendChild(el('div', 'schedule-notes', '+ ' + plural(cut, 'later event') + ' not listed: the answer '
-                + 'carries the first ' + published.length + ' · each row’s reset list has every reported reset'));
-        }
-        box.appendChild(jointDetails(fam, option, ctx));
-        return box;
-    }
-
-    // A published line cut at the span's end, its value there read straight
-    // between the vertices either side.
-    function clipLine(line, now, end) {
-        if (!Array.isArray(line) || !line.length) return null;
-        var out = [];
-        for (var i = 0; i < line.length; i++) {
-            var p = line[i];
-            if (p[0] <= end) { out.push([p[0], p[1]]); continue; }
-            var prev = out.length ? out[out.length - 1] : null;
-            if (prev && prev[0] < end && typeof prev[1] === 'number' && typeof p[1] === 'number') {
-                out.push([end, prev[1] + (p[1] - prev[1]) * (end - prev[0]) / (p[0] - prev[0])]);
-            }
-            break;
-        }
-        return out;
-    }
-
-    var CHANGE_WORDS = {
-        reset: function (c, ctx) { return limitWord(c.limit, ctx) + ' resets'; },
-        exhausted: function (c, ctx) { return limitWord(c.limit, ctx) + ' runs out'; },
-        cooldown_end: function () { return 'a cooldown ends'; },
-        model_hold_end: function () { return 'a model hold ends'; }
-    };
-
-    function changeWords(changes, ctx) {
-        return (changes || []).map(function (c) {
-            var words = (CHANGE_WORDS[c.kind] || function () { return c.kind; })(c, ctx);
-            return words + (c.accounts > 1 ? ' (' + c.accounts + ' accounts)' : '');
-        }).join('; ');
-    }
-
-    var JOINT_ROWS = 4;
-
-    function jointEventsTable(events, option, ctx, withHours) {
-        var table = el('table', 'schedule');
-        table.appendChild(el('caption', null, 'What changes when · ' + scenarioName(scenario).replace('Recent pace', 'Recent load').toLowerCase()));
-        var head = el('tr');
-        [['When', ''], ['What happens', ''], ['Free · ' + optionName(option), 'n']]
-            .concat(withHours ? [['Account-hours after', 'n']] : []).forEach(function (h) {
-                var th = el('th', h[1] || null, h[0]);
-                th.setAttribute('scope', 'col');
-                head.appendChild(th);
-            });
-        var thead = el('thead');
-        thead.appendChild(head);
-        table.appendChild(thead);
-        var body = el('tbody');
-        var shown = jointAll || events.length <= JOINT_ROWS ? events : events.slice(0, JOINT_ROWS);
-        var cols = withHours ? 4 : 3;
-        shown.forEach(function (e) {
-            var tr = el('tr');
-            var iso = isoOf(e.at);
-            var when = el('td', null, whenWords(iso));
-            when.title = momentWords(e.at) + ' · ' + relTime(iso);
-            tr.appendChild(when);
-            tr.appendChild(el('td', null, changeWords(e.changes, ctx)));
-            var counts = e.counts_after || {};
-            tr.appendChild(el('td', 'n', typeof counts[option.key] === 'number' ? String(counts[option.key]) : '—'));
-            if (withHours) tr.appendChild(el('td', 'n', typeof e.hours_after === 'number' ? num(e.hours_after, 1) : '—'));
-            body.appendChild(tr);
-        });
-        if (events.length > JOINT_ROWS) {
-            var moreRow = el('tr');
-            var cell = el('td');
-            cell.setAttribute('colspan', String(cols));
-            var more = el('button', 'pill-btn schedule-more', jointAll ? 'Show the first ' + JOINT_ROWS
-                : plural(events.length - shown.length, 'more event'));
-            more.setAttribute('type', 'button');
-            more.setAttribute('aria-expanded', jointAll ? 'true' : 'false');
-            more.setAttribute('data-focus', 'joint-all');
-            more.addEventListener('click', function (ev) {
-                ev.stopPropagation();
-                jointAll = !jointAll;
-                rerender();
-                restoreFocus('joint-all');
-            });
-            cell.appendChild(more);
-            moreRow.appendChild(cell);
-            body.appendChild(moreRow);
-        }
-        if (!events.length) {
-            var tr0 = el('tr');
-            var td0 = el('td', null, 'Nothing reported changes within this span.');
-            td0.setAttribute('colspan', String(cols));
-            tr0.appendChild(td0);
-            body.appendChild(tr0);
-        }
-        table.appendChild(body);
-        return table;
-    }
-
-    // Each account under the model chosen, its own recent mix, and every
-    // caveat of the view, folded.
-    function jointDetails(fam, option, ctx) {
-        var details = el('details', 'chart-table');
-        if (detailsOpen) details.open = true;
-        details.addEventListener('toggle', function () { detailsOpen = !!details.open; });
-        var summary = el('summary', null, 'Details, notes and data');
-        summary.setAttribute('data-focus', 'chart-table');
-        details.appendChild(summary);
-        var notes = el('div', 'chart-notes');
-        var work = fam.workload || {};
-        [
-            'Together: an account can serve ' + optionName(option) + ' only while every limit that applies to it has quota at '
-                + 'once — limits are never added or averaged, and a full 5-hour window does not free an account whose weekly '
-                + 'limit is spent. Accounts are judged one by one first; the family is counted only afterwards.',
-            'Unknown stays unknown: a limit with no current reading, a limit of unknown scope, an account list not read '
-                + 'now, or a choice no limit read is known to apply to makes an account incomplete — never free, never held.',
-            'Account-hours: for each account, its share left of every limit its recent mix used, over the rate that mix '
-                + 'used it at — all rates over one common stretch of watched readings, at least 15 minutes — and the '
-                + 'first to run out. A limit that showed no change, or has no measured pace, leaves the account out of the '
-                + 'hours (said, never a zero or an endless reserve). Hours of different accounts are added; each is that '
-                + 'account repeating its own recent work.',
-            'Futures: only each limit’s next reported reset, refilling that limit alone, reported cooldown and model-hold '
-                + 'ends, and — at the recent load — the moments a measured mix runs a limit out, every measured account '
-                + 'repeating its own recent mix while nothing stops it and the others held as they are. Events at one moment '
-                + 'apply together; then every limit is judged again. No later reset, no manual reset credit, no other '
-                + 'account taking over the work.',
-            'Free accounts in “What changes when” are counted for ' + optionName(option) + '. A reported event that moves '
-                + 'neither that count nor the account-hours — a limit refills, but another still holds the account, or it '
-                + 'was not the one in the way — is counted under the table, not listed; each row’s own reset list has it.',
-            'Account-hours are not hours of one model: each account’s recent mix may span models and request kinds. An '
-                + 'account counts only when every limit that may bind that mix is read now, applies knowably and was '
-                + 'paced from one source; a model hold counts only when the models it names relate to that mix.'
-        ].concat(work.possible_duplicates ? [work.possible_duplicates + ' measured accounts share a sign-in with another: '
-            + 'they may draw on one pool, so their hours may be counted twice.'] : [])
-            .concat(Object.keys(work.not_calibrated || {}).length ? ['Not measured: ' + Object.keys(work.not_calibrated)
-                .map(function (k) { return work.not_calibrated[k] + ' — ' + (WORK_WHY[k] || k); }).join('; ') + '.'] : [])
-            .forEach(function (text) { notes.appendChild(el('p', null, text)); });
-        details.appendChild(notes);
-        var table = el('table');
-        var head = el('tr');
-        ['Account', optionName(option), 'Recent mix'].forEach(function (h) {
-            var th = el('th', null, h);
-            th.setAttribute('scope', 'col');
-            head.appendChild(th);
-        });
-        var thead = el('thead');
-        thead.appendChild(head);
-        table.appendChild(thead);
-        var body = el('tbody');
-        (fam.account_states || []).forEach(function (a) {
-            var st = (a.options || {})[option.key];
-            var tr = el('tr');
-            tr.appendChild(el('td', null, accountName(ctx.index, a.account)));
-            tr.appendChild(el('td', null, verdictWords(st, option, ctx, ctx.index[a.account]).text));
-            var w = a.workload || {};
-            tr.appendChild(el('td', null, w.state === 'ok' ? '≈ ' + num(w.hours, 1) + ' h · ' + limitWord(w.binding, ctx) + ' first'
-                : (w.state === 'blocked' ? 'stopped now · ' + (w.stopped_by === 'cooldown' ? 'cooldown'
-                    : (w.stopped_by === 'model_hold' ? 'model hold' : limitWord(w.stopped_by || w.binding, ctx)))
-                    : (WORK_WHY[w.reason] || WORK_WHY[w.state] || (w.state === 'not_running' ? 'not running' : '—')))));
-            body.appendChild(tr);
-        });
-        table.appendChild(body);
-        details.appendChild(table);
-        return details;
-    }
-
     // The timeline of the charted limit, right under its row (its one toggle
     // is the row's control): its span and its future; the chart; under it
     // the legend — whose total each line is, and what the future assumes —
     // where that future stands a few moments ahead, the next reported
     // resets, and the details folded.
     function timelineBlock(ctx, g) {
-        // A timeline a click has just opened eases in, once; a poll, a mount
-        // or a change of span or future redraws it in place.
-        var box = el('div', 'tl-block' + (revealNext === 'timeline' ? ' reveal' : ''));
+        var box = el('div', 'tl-block');
         box.setAttribute('role', 'group');
         box.setAttribute('aria-label', 'Timeline of ' + ctx.names[g.key]);
         var name = ctx.names[g.key];
@@ -3952,13 +3031,11 @@
     // What the chart says at one moment, as rows of [series, value].
     function valuesAt(chart, sc, t) {
         var rows = [];
-        if (t <= chart.now && !chart.future_only) {
+        if (t <= chart.now) {
             var v = observedAt(chart, t);
             rows.push(['recorded', v === null || v === undefined ? null : v]);
         }
-        var futureName = chart.future_only ? (scenario === 'no_new_use' ? 'no new use' : 'recent load')
-            : scenarioName(scenario).toLowerCase();
-        if (sc && t >= chart.now) rows.push([futureName, lineAt(sc.line, t)]);
+        if (sc && t >= chart.now) rows.push([scenarioName(scenario).toLowerCase(), lineAt(sc.line, t)]);
         return { future: t > chart.now, rows: rows };
     }
 
@@ -3978,7 +3055,6 @@
                 return 'recorded ' + (r[1] === null ? 'no record (gap)'
                     : num(r[1], 2) + ' of ' + plural(recordedCount(chart, t), 'account'));
             }
-            if (chart.future_only) return r[0] + ' ' + (r[1] === null ? 'not drawn' : num(r[1], 1) + ' account-hours');
             return r[0] + ' ' + (r[1] === null ? 'not drawn' : num(r[1], 2) + ' of ' + plural(sc.accounts, 'current account'));
         });
         if (!words.length) words.push(at.future ? 'no future drawn' : 'no record');
@@ -4098,12 +3174,9 @@
         plot.setAttribute('tabindex', '0');
         plot.setAttribute('data-focus', 'chart-plot');
         plot.setAttribute('role', 'group');
-        plot.setAttribute('aria-label', chart.future_only
-            ? 'Timeline of ' + name + ', ' + chart.unit_aria + ', ahead of now. Arrow keys move through time; the table '
-                + 'below lists what changes when.'
-            : 'Timeline of ' + name + ', account-windows left: the record behind now'
-                + (sc ? ', ' + scenarioName(scenario).toLowerCase() + ' ahead' : '')
-                + '. Arrow keys move through time; the data table under Details lists the values.');
+        plot.setAttribute('aria-label', 'Timeline of ' + name + ', account-windows left: the record behind now'
+            + (sc ? ', ' + scenarioName(scenario).toLowerCase() + ' ahead' : '')
+            + '. Arrow keys move through time; the data table under Details lists the values.');
         var svg = svgCanvas('0 0 ' + W + ' ' + H, W, H);
         svg.setAttribute('class', 'chart-svg');
         svg.appendChild(svgEl('rect', { x: x(now), y: pt, width: Math.max(0, x(t1) - x(now)), height: bottom - pt,
@@ -4202,8 +3275,7 @@
                 var none = r[1] === null || r[1] === undefined;
                 var detail = r[0] === 'recorded' ? historyDetailAt(chart, t) : null;
                 row.appendChild(legendSwatch(r[0] === 'recorded' ? (detail && detail.carried ? 'line-carried' : 'line-observed') : 'line-scenario'));
-                row.appendChild(el('span', 'tip-val', none ? (r[0] === 'recorded' ? 'no record' : 'not drawn')
-                    : num(r[1], chart.future_only ? 1 : 2)));
+                row.appendChild(el('span', 'tip-val', none ? (r[0] === 'recorded' ? 'no record' : 'not drawn') : num(r[1], 2)));
                 row.appendChild(el('span', 'tip-name', r[0] === 'recorded' && detail && detail.carried ? 'last-known history' : r[0]));
                 tip.appendChild(row);
                 if (!none) {
@@ -4216,7 +3288,7 @@
             if (t <= chart.now) historyWords(historyDetailAt(chart, t), t).forEach(function (words) {
                 tip.appendChild(el('div', 'tip-foot', words));
             });
-            tip.appendChild(el('div', 'tip-foot', name + ' · ' + (chart.unit_foot || 'account-windows left, scale ' + ymax)));
+            tip.appendChild(el('div', 'tip-foot', name + ' · account-windows left, scale ' + ymax));
             tip.style.display = 'block';
             var rect = svg.getBoundingClientRect ? svg.getBoundingClientRect() : null;
             var scale = rect && rect.width ? rect.width / W : 1;
@@ -4314,8 +3386,8 @@
                 parts.push([UNKNOWN_WORDS[bar.why] || 'no usable reading', '']);
             } else {
                 if (bar.resets_at) {
-                    parts.push([bar.state === 'last_known' ? 'reported reset ' + resetWhen(bar.resets_at)
-                        : (bar.at_limit ? 'until ' + untilWhen(bar.resets_at) : 'resets ' + resetWhen(bar.resets_at)), '']);
+                    parts.push([(bar.state === 'last_known' ? 'reported reset ' : (bar.at_limit ? 'until ' : 'resets '))
+                        + whenWords(bar.resets_at), '']);
                 }
                 if (bar.state === 'last_known') {
                     parts.push(['last known, read ' + (relTime(bar.observed_at) || 'at an unreported time'), 'warn']);
@@ -4366,8 +3438,8 @@
     function renderInspector(parent, group, account, ctx, facets) {
         var quota = account.quota || {};
         var overview = !!(ctx && ctx.groups.length);
-        var box = el('section', 'inspector' + (revealNext === 'inspector' ? ' reveal' : ''));
-        box.setAttribute('aria-label', 'Selected account: ' + account.label);
+        var box = el('section', 'inspector');
+        box.setAttribute('aria-label', 'Selected account');
         var head = el('div', 'insp-head');
         var title = el('div', 'insp-title');
         var tone = accountTone(account, facets);
@@ -4408,26 +3480,6 @@
         var notes = el('div', 'insp-meta');
         appendHarnessNotes(notes, group, facets);
         if (notes.firstChild) box.appendChild(notes);
-
-        // First, what its limits allow together for the model chosen in the
-        // Together row — held by what, until when, may run again when — and
-        // apart from it, what its own recent mix could still run.
-        var fam = ctx && ctx.together;
-        var joint = fam ? jointAccount(fam, account.key) : null;
-        if (joint) {
-            var option = jointOptionOf(fam);
-            var st = (joint.options || {})[option.key];
-            var verdict = verdictWords(st, option, ctx, account);
-            var lead = el('div', 'j-verdict');
-            lead.appendChild(stateDot(JOINT_TONE[(st || {}).state] || 'muted'));
-            var leadText = el('div', null);
-            leadText.appendChild(el('div', null, verdict.text));
-            if (verdict.note) leadText.appendChild(el('div', 'j-verdict-note', verdict.note));
-            var work = workloadWords(joint.workload, ctx);
-            if (work) leadText.appendChild(el('div', 'j-verdict-note', work));
-            lead.appendChild(leadText);
-            box.appendChild(lead);
-        }
 
         // The account's own verdict where it says something the lines below
         // cannot: a limit reached, a facet unread, no window at all. A cooling
@@ -4498,13 +3550,9 @@
     // in every limit (from the same bars) and its state; the ones that cannot
     // run anything follow under their reasons. A row selects the account —
     // the same selection a bar makes.
-    function renderAccounts(parent, group, ctx, facets, forceOpen, placement) {
+    function renderAccounts(parent, group, ctx, facets, forceOpen) {
         var accounts = group.accounts || [];
         if (!accounts.length) return;
-        // A card opened from the list stands right under its row, or under
-        // the list's head while the list is folded.
-        var fromList = !!placement && ((vanished ? vanished.origin : selectionOrigin) === 'list'
-            || (ctx && ctx.anchor === 'list'));
         var groups = ctx ? ctx.groups : [];
         var names = ctx ? ctx.names : {};
         var running = [];
@@ -4533,7 +3581,6 @@
         }
         box.appendChild(head);
         if (!open) {
-            if (fromList) placement.place(box, ctx);
             parent.appendChild(box);
             return;
         }
@@ -4598,23 +3645,18 @@
             btn.setAttribute('aria-label', said.join(' · ') + (isOn ? ' · selected' : ''));
             btn.addEventListener('click', function (e) {
                 e.stopPropagation();
-                selectAccount(isOn ? '' : account.key, 'acct:' + account.key, 'list');
+                selectAccount(isOn ? '' : account.key, 'acct:' + account.key);
                 restoreFocus('acct:' + account.key);
             });
             return btn;
         }
-        function add(a) {
-            table.appendChild(row(a));
-            if (fromList && (a.key === selectedAccountKey || (vanished && a.key === vanished.key))) placement.place(table, ctx);
-        }
-        running.forEach(add);
+        running.forEach(function (a) { table.appendChild(row(a)); });
         if (idle.length) {
             table.appendChild(el('div', 'acc-sec', 'Not running — '
                 + 'switched off, signed out or failing their check; not counted as alerts'));
-            idle.forEach(add);
+            idle.forEach(function (a) { table.appendChild(row(a)); });
         }
         box.appendChild(table);
-        if (fromList) placement.place(box, ctx);
         parent.appendChild(box);
     }
 
@@ -4712,15 +3754,6 @@
                 + scopeWords(scoped).replace(/^models?: /, '') : '') + '.');
         item('Never added', 'Limits of different length or model are never added together: a 5-hour and a weekly '
             + 'limit bound the same work at once. Measured quota is not a dispatch guarantee: Claudexor decides routing.');
-        item('Together', 'An account can serve a model only while every limit that applies to it has quota at once. The '
-            + 'Together row counts, for the model chosen (by default the shared limits), the accounts with no known '
-            + 'restriction; the rest are held (a limit at its limit, a cooldown, a model hold — until when), incomplete '
-            + '(something unread or of unknown scope) or not running. Account-hours are each account repeating its own '
-            + 'recent mix of work until a limit that mix uses runs out — not hours of one model. Its chart shows them '
-            + 'ahead, with only reported resets and hold ends.');
-        item('Resets', 'Each row says its next reported reset — how far off and the local date — and opens every '
-            + 'reported reset in place, current and last-known apart. A reset refills its own limit only. Manual reset '
-            + 'credits are a separate count.');
         if (summary) {
             var age = readingAge(summary, groups);
             var history = summary.history || {};
@@ -4941,10 +3974,7 @@
                 reserve.summary = Object.assign({}, summary, {
                     cached: cached,
                     roster: summary.roster === 'unknown' ? 'unknown' : 'cached',
-                    groups: (summary.groups || []).map(function (g) { return keptGroup(g, nowMs); }),
-                    // Who is free now, and every future of it, rests on
-                    // current readings: withdrawn on a kept screen.
-                    together: []
+                    groups: (summary.groups || []).map(function (g) { return keptGroup(g, nowMs); })
                 });
             }
             if (reserve.chart) reserve.chart = keptChart(reserve.chart);
@@ -5051,7 +4081,6 @@
             observed: { newest_at: null, oldest_at: null, stale_newest_at: newest || null },
             next_reset: null,
             next_reset_returns: null,
-            reset_schedule: keptSchedule(known, nowMs),
             reset_unknown: 0,
             pace_to_reset: null,
             recent_pace: { state: 'no_measured_accounts', accounts_known: 0, of: 0, not_known: {} },
@@ -5060,22 +4089,6 @@
             unknown: { accounts: unknown.length, reasons: reasons },
             with_last_known: { windows: windows, accounts: known.length }
         });
-    }
-
-    // A kept screen's resets are all reported by last-known readings now.
-    function keptSchedule(known, nowMs) {
-        var times = known.filter(function (b) { return !!b.resets_at && isFinite(Date.parse(b.resets_at)); })
-            .map(function (b) { return Date.parse(b.resets_at); }).sort(function (a, b) { return a - b; });
-        var out = [];
-        times.forEach(function (t) {
-            var last = out[out.length - 1];
-            if (last && t - last.first <= 120000) { last.lastAt = t; last.accounts++; }
-            else out.push({ first: t, lastAt: t, accounts: 1 });
-        });
-        return { current: [], current_without_reset: 0, last_known: out.map(function (e) {
-            return { at: new Date(e.first).toISOString(), last: new Date(e.lastAt).toISOString(), accounts: e.accounts,
-                     passed: e.lastAt <= nowMs };
-        }) };
     }
 
     // The chart of a kept screen: the record stays; nothing is drawn at or
@@ -5236,36 +4249,23 @@
     // The family on screen: the reader's, while it exists; else the first
     // family with accounts. The selected account stays only while it is
     // still an account of that family: nothing selects itself.
-    function syncSelection(groups, view) {
+    function syncSelection(groups) {
         var group = null;
-        var was = selectedHarness;
         var i;
         for (i = 0; i < groups.length; i++) if (groups[i].harness_id === selectedHarness) { group = groups[i]; break; }
         if (!group) {
             for (i = 0; i < groups.length; i++) if ((groups[i].accounts || []).length) { group = groups[i]; break; }
         }
         if (!group) group = groups[0] || null;
-        var account = null;
-        ((group && group.accounts) || []).forEach(function (a) { if (a && a.key === selectedAccountKey) account = a; });
-        if (account) {
-            selectedLabel = String(account.label || account.key);
-            selectedFamily = familyName(group);
-        } else if (selectedAccountKey) {
-            // Gone from an account list read now — alone, or with every
-            // account of its family, the screen then on another family: its
-            // card closes with a note where the reader is, never silently,
-            // never moving the page.
-            if (((view && view.facets) || {}).accounts === 'ok') {
-                vanished = { label: selectedLabel, key: selectedAccountKey, at: Date.now(), origin: selectionOrigin,
-                             family: group && group.harness_id === was ? '' : selectedFamily };
-            }
-            selectedAccountKey = '';
-        }
         if (!group) {
             selectedHarness = '';
+            selectedAccountKey = '';
             return { group: null, account: null };
         }
         selectedHarness = group.harness_id;
+        var account = null;
+        (group.accounts || []).forEach(function (a) { if (a && a.key === selectedAccountKey) account = a; });
+        if (!account) selectedAccountKey = '';
         return { group: group, account: account };
     }
 
@@ -5309,7 +4309,6 @@
                 if (selectedHarness !== group.harness_id) {
                     selectedHarness = group.harness_id;
                     selectedAccountKey = '';
-                    vanished = null;
                     chartCursor = null;
                 }
                 rerender();
@@ -5344,17 +4343,7 @@
 
         var facets = view.facets || {};
         var groups = view.groups || [];
-        var hadCard = !!selectedAccountKey;
-        var selection = syncSelection(groups, view);
-        // The card was where the keyboard was, and its account has gone:
-        // the keyboard moves to the note that says so.
-        if (hadCard && vanished && !selection.account && focusWas) {
-            var gone = String(vanished.key || '');
-            if (/^inspector-/.test(focusWas) || focusWas === 'jcell:' + gone || focusWas === 'acct:' + gone
-                    || (focusWas.indexOf('bar:') === 0 && focusWas.slice(-gone.length - 1) === ':' + gone)) {
-                focusWas = 'vanished-ok';
-            }
-        }
+        var selection = syncSelection(groups);
         var daemon = view.daemon || {};
         var daemonDown = !!(daemon.state && daemon.state !== 'running');
         var unreadFacets = unreadFacetsOf(view);
@@ -5445,25 +4434,11 @@
         /* 3. The family's limits; the account selected in them; its timeline;
            its accounts. */
         var ctx = null;
-        // One card, standing where it was opened (renderReserve,
-        // renderAccounts); with no overview, after the reserve, as before.
-        var placement = { placed: false, place: function (into, where) {
-            if (placement.placed) return;
-            if (selection.account) {
-                placement.placed = true;
-                renderInspector(into, selection.group, selection.account, where || ctx, facets);
-            } else if (vanished) {
-                placement.placed = true;
-                into.appendChild(vanishedNote());
-            }
-        } };
-        if (hasAnswer && selection.group) ctx = renderReserve(root, view.reserve, selection.group, view, placement);
-        var listOrigin = (vanished ? vanished.origin : selectionOrigin) === 'list';
-        if (!listOrigin || !(selection.group && (selection.group.accounts || []).length)) placement.place(root, ctx);
+        if (hasAnswer && selection.group) ctx = renderReserve(root, view.reserve, selection.group, view);
+        if (selection.account) renderInspector(root, selection.group, selection.account, ctx, facets);
         if (selection.group && (selection.group.accounts || []).length) {
-            renderAccounts(root, selection.group, ctx, facets, !(ctx && ctx.groups.length), placement);
+            renderAccounts(root, selection.group, ctx, facets, !(ctx && ctx.groups.length));
         }
-        placement.place(root, ctx);
         if (!hasAnswer) {
             emptyCard('refresh', 'Reading accounts…', 'Asking the Claudexor daemon for accounts and quota.');
         } else if (!selection.group) {
@@ -5483,7 +4458,6 @@
 
         if (focusWas) restoreFocus(focusWas);
         restoreScroll(scrollWas);
-        revealNext = '';
         askForChart();
     }
 
@@ -5496,8 +4470,7 @@
         for (var i = 0; i < nodes.length; i++) {
             if (nodes[i].getAttribute('data-focus') !== key) continue;
             if (!nodes[i].disabled) {
-                // Never scroll the page to give the keyboard back.
-                try { nodes[i].focus({ preventScroll: true }); } catch (err) { nodes[i].focus(); }
+                nodes[i].focus();
                 return;
             }
             held = true;
@@ -5566,8 +4539,6 @@
             restoreFocus('about');
         } else if (selectedAccountKey) {
             clearAccount();
-        } else if (vanished) {
-            dismissVanished();
         }
     }
 
