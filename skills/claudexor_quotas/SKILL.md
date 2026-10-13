@@ -1,7 +1,7 @@
 ---
 name: claudexor_quotas
-description: "Claudexor quota widget and read-only quota_summary tool: one bar per account and limit (current, dated last-known, or unknown — never zero), reserve in account-windows with coverage, restrictions and reported resets near every row; what all limits allow together per account and model (who has no known restriction, held by what until when, account-hours of each account's own recent mix) with its reported events ahead; and one timeline — a limit's recorded past and conditional future, or the limits together — from a bounded local history of passive readings."
-version: 0.10.0
+description: "Claudexor quota widget and read-only quota_summary tool: one bar per account and limit (current, dated last-known, or unknown — never zero), reserve in account-windows with coverage, restrictions and reported resets, and under the chosen limit a timeline — its recorded past and one conditional future (no new use, or the recent pace) of the accounts read now, with its reset schedule — from a bounded local history of passive readings."
+version: 0.9.0
 type: extension
 runtime: python3
 entry: plugin.py
@@ -10,8 +10,8 @@ permissions: [net, route, widget, tool, supervised_task]
 env_from_settings: []
 when_to_use: "The owner wants quota windows, resets and remaining reserve of the authorized Claudexor accounts; or, before choosing executors, the model wants measured reserve by family and limit. Advisory only: never a dispatch guarantee or a pin change."
 model_experience:
-  what_model_sees: "One tool, quota_summary, with a fixed schema (optional harness, detail, model, request_kind). Only when called does compact JSON (account-windows per family and limit, current and dated last-known apart, coverage, restrictions, resets, pace, a one-line headline per limit, and per family what the limits allow together with its next events) arrive as a tool result; nothing is auto-inserted."
-  token_effect: "Fixed schema and description while enabled; each voluntary call adds JSON whose size depends on accounts and model scopes; detail includes full reset schedules. No automatic call or cache benefit is promised."
+  what_model_sees: "One tool, quota_summary, with a fixed schema. Only when called does compact JSON (account-windows per family and limit, current and dated last-known apart, coverage, restrictions, resets, pace, and a one-line headline per limit) arrive as a tool result; nothing is auto-inserted."
+  token_effect: "Fixed schema and description while enabled; each voluntary call adds about 1-8 KB of JSON, less per family. No automatic call or cache benefit is promised."
 timeout_sec: 180
 ui_tab:
   tab_id: quotas
@@ -25,7 +25,7 @@ ui_tab:
     start: auto
 ---
 
-# Claudexor Quotas (v0.10.0)
+# Claudexor Quotas (v0.9.0)
 
 A projection of the host's own account surface, plus a small planner on top of
 it: how much measured quota is left per agent family and limit, when it is
@@ -58,215 +58,6 @@ it (`api.get_state_dir()`):
 - `quota_collector.lock` — an empty lease file, never removed while the skill
   runs. Its OS lock serializes collector cycles across unload/reload; it holds
   no account or quota data. SQLite may also keep its standard WAL/SHM files.
-
-## What changed in 0.10.0: the limits together
-
-A 5-hour limit, a weekly limit and a model's own weekly limit bound the same
-work at the same time: an account can serve a model only while **every**
-limit that applies to it has quota at once. 0.9 said each limit apart, so a
-full 5-hour row could stand above an account its spent weekly limit holds.
-0.10.0 adds that answer, per account first, the family only afterwards, in one
-calculation (`quota_summary.build_together`) that the widget and the
-`quota_summary` tool both read. Nothing in the routes, the collector, the
-history store or the engine changes, and no legacy field changes its meaning:
-every new field is additive.
-
-**What applies to what.** Each limit gets `applicability_basis`: `own` (the
-family's own bucket — no namespace, the harness's own, or the engine's
-`default` — every model), `named_models` (its whole `applies_to_models` list,
-every name in full), `names_unknown` (model-scoped, names not kept by the
-history) or `foreign_namespace` (an extra bucket of another namespace with no
-scope; the engine itself marks those of applicability unknown). An empty model
-scope there is never read as "every model" — nor does a request-kind list make
-it so — and nothing is classified by a limit's or a model's name. The optional
-engine field `applies_to_request_kinds` is read as `request_scope`: absent or
-null is the legacy meaning, every kind (`universal`); a non-empty list of names
-is `listed` (an image-only limit never gates text; on an extra bucket, a kind it
-names stays unknown); anything else is `unknown`, never universal. Limits
-restored from the history (which records no kinds) are read as legacy. The
-field never moves
-a limit's key: its history stays its own. Readings of one limit that disagree
-on it make the scope `mixed`, which is unknown.
-
-**Model choices.** `together[].options` holds `other` first, always — the shared
-limits alone, for models no model-scoped limit or hold names; the widget's and
-the tool's default, named "Shared limits" (or "All models" when no limit is
-model-scoped) — then every full model name the scoped limits' and model holds'
-`applies_to_models` lists carry, each its own choice, never clustered by stem
-or label, at most 24 of them (`options_omitted`); a name the tool asks for is
-resolved before that bound, as one more choice. The chosen
-model decides only which limits apply and the conditional unlock; the
-quantity below does not depend on it.
-
-**Per account, four states, in this order** (every reason kept, whichever
-wins): `not_running` — switched off, signed out or failing its check; a quota
-reset repairs none of them; `blocked` — a limit that applies is at its limit
-(until its reported reset, or with no reported reset: unknown), a cooldown, or
-a model hold (a model cooldown or a live reported model limit) on the chosen
-model; `incomplete` — a limit that applies has no current reading
-(`no_current_reading`), the account has no reading of a limit of its family
-that applies (`no_reading_of_limit`), it carries a limit of unknown scope
-(`unknown_scope`, whatever that limit reads: `has_quota`, `spent` or
-`not_current`), no limit read is known to apply to the choice at all — the
-shared limits of a family that reported only model-scoped ones
-(`no_limit_known_to_apply`) — or the account list was not read now
-(`account_state_unknown`); else `no_known_block`. Nothing unread counts as
-free, nor as held. A held account's conditional unlock (`unlock_at`) is the
-latest end among its holds —
-the 5-hour reset alone never frees an account its weekly limit holds — and is
-unknown when any end is unknown. Family counts, `blocked_by` (per limit,
-`cooldown`, `model_hold`; an account held twice counts under each),
-`incomplete_by`, `next_unlock` and `unlock_unknown` are added only afterwards.
-
-**Account-hours of each account's own recent mix** (`workload`). First the
-whole set of limits that may bind the mix must be known, as the account's
-eligibility knows it: a limit of its family that applies to some of its work
-(the family's own, or a model- or kind-scoped one: the unattributed mix may
-have used its models and kinds, whichever request kind is judged) with no
-reading for this account leaves it `incomplete`
-(`no_reading_of_limit`), and so does a limit it carries whose scope is unknown
-(`unknown_scope`, whatever that limit reads: its growth proves no share of
-the mix), a limit read but not current (`no_current_reading`) or an account
-list not read now (`account_state_unknown`). So an account with hours has no
-model choice left incomplete for want of a limit's reading or scope. Then
-every limit of the account needs a measured pace, all paced from **one
-source** (two sources round and observe apart: `sources_differ`), and all
-their use rates are taken over **one common stretch** of watched readings —
-the intersection of their comparable stretches, at least 15 minutes. A limit that
-grew over it is consumed by the account's recent mix of work (whichever model
-the reader chooses); a model- or kind-scoped limit at its limit all through
-the stretch could not be consumed and is left out of the mix. The account's
-hours are then H = min over the consumed limits of (share left / use per
-hour): how long it could repeat its own recent work before a limit that work
-uses runs out. The account is left out of the hours — counted in
-`not_calibrated`, never given a zero, an infinite term or a rounding bound —
-when a limit has no measured pace (`pace_unknown`), the stretches do not
-overlap for 15 minutes (`no_common_interval`), a limit with quota showed no
-change (`no_change_observed`: its share of the mix is unknown), a limit every
-request needs was at its limit all through (`shared_limit_spent`), or a model
-hold's share of the mix is not attributed (`model_hold_unmeasured`). A model
-hold joins the mix by the model names they share, never by the identity of
-the whole list: it stops the mix (0 hours, `blocked` until it ends) when it
-covers every model of a model-scoped limit the mix consumed; it is apart when
-it names only models of model-scoped limits the mix could not consume (at
-their limit all through); anything else — a hold on M while the mix used the
-[M, N] limit, a hold on a model of no measured limit — leaves the account out
-of the hours. An account whose mix used a limit that is now spent has 0 hours (`blocked`) even
-when the chosen model is free: a mix of M and N with N's limit spent leaves M
-unheld but the mix unrepeatable. `hours` is the sum over the measured accounts
-(`null`, never 0, with none), in account-hours — each account repeating its
-own work, not hours of one model, compute or task time — with its coverage
-(`accounts_calibrated` of `accounts_considered`) and `possible_duplicates` (two
-profiles of one sign-in may draw on one pool).
-
-**Futures** (`scenarios.no_new_use`, `scenarios.recent_load`, to seven days
-ahead): per account, only each limit's next reported reset (refilling that
-limit alone, once), the reported ends of cooldowns and model holds and — at
-the recent load, for measured accounts — the moments the mix, repeated at its
-own rates, runs a consumed limit out. Every consumed limit is used together,
-only while the mix is not stopped; nothing is used while it is. Events at one
-instant apply together, then everything is judged again. No later reset, no
-manual reset credit, no other account taking over the work. Each carries
-`hours_line` (null with no measured account), the free count per choice as
-steps (`counts`), `events` (the first 48, `events_omitted` counting the rest:
-what changed — `reset`, `exhausted`, `cooldown_end`, `model_hold_end` — by limit
-and account count, the hours just before and after, the free count after, each
-at the exact moment its accounts' futures give it and judged there, never at a
-rounded one; events within a microsecond are one), and `checkpoints`. The
-agreed check: accounts A (share left 20%/5%, using 10/5 points an hour, resets
-in 2 h/4 h)
-and B (40%/30%, 20/10, 3 h/6 h) give 3, 1, 0, 1, 10, 12 account-hours after the
-events at 0, 1, 2, 3, 4, 6 h at the recent load, and 3, 3, 4, 13, 15 at 0, 2, 3,
-4, 6 h with no new use; A with its 5-hour full and its weekly spent and B the
-other way round are 0 accounts free, though each limit alone shows one full
-window.
-
-**Resets near every row.** Each limit adds `reset_schedule`: the current
-readings' next resets grouped as `next_reset` groups them, and apart — never
-merged — the resets last-known readings reported (`passed` when that moment
-has gone: a reset expected with no reading since, never a refill), and how
-many current accounts report none. The schedule is whole: one row per
-distinct moment, never more rows than the limit has accounts, none left out. The widget says the next one in its row's
-tail — "next reset in 2h · Sun 11 Oct 14:00 · 3 accounts" (relative, then the
-local date) — or, with only last-known readings, "last reported reset …"; those
-words are a button that opens every reported reset right under the row, without
-the chart, current and last-known apart. Manual reset credits stay their own
-count, never a reset.
-
-**Other limits.** A limit no reading of this answer names — known only from
-the local history for accounts of the current roster
-(`restored_from_history`) — folds into one "Other limits" line under the rows,
-with its own name (an extra bucket says its namespace: "Weekly · base model
-inference"), its accounts, when it was last read, its last reported reset and
-that what it applies to is unknown; the line opens the same full rows in
-place, and stays open through polls. It folds only while the answer's original
-quota facet was read (`reads.quota` ok, not kept from an earlier answer) and
-never every limit of the family: a failed or unread quota facet, or a limit
-read stale now, keeps every row.
-
-**The widget.** Above the limits, one Together row in the same grid: the model
-choice (a native select: Shared limits, then each full name; in a narrow card
-it narrows within its track, the name clipped, never over the row's control),
-one small square per account — free, held (amber), incomplete (outlined) or not
-running (hatched)
-— never a share; the free count of all accounts; "≈ N account-h" or "hours not
-measured"; what holds the rest by limit, the earliest unlock and how many
-limits of unknown scope there are. A square selects its account. Each mount
-opens the **one** timeline as the limits together, right under it (its
-control says "Hide chart"; the first read sends `chart=0`, since no chart of
-one limit is needed): ahead of now only (no joint record is kept), y in
-account-hours, the two futures, the checkpoints and "What changes when" —
-only events that move the free count or the hours, or run a limit out;
-refills that change nothing together are counted in one line, and events the
-answer left out inside the span (`events_omitted`) in another. Its span is
-24 hours when every reported event of the future on screen falls within a
-day (none left out of the answer) — the shape of what changes, not a week of
-flat line after it — else 7 days; a limit's own timeline keeps its own span,
-and the reader's pick of span holds for both. On the face, one line says the
-unit and its coverage ("Account-hours · each account repeating its own recent
-mix, not hours of one model · 2 of 6 accounts measured") and one short line
-the future's assumption; every caveat — the conjunction, unknowns, how hours
-are measured, what a future assumes, what the free count is counted for —
-is under its Details. With no account measured there is no line, never a
-flat zero; the events and each limit's own timeline stay. Each limit's own
-record (the 0.9 timeline) is its row's "Show chart" away, drawn from the
-answer at hand when it carries that chart; with no Together view in the
-answer (a kept screen) the timeline falls back to the lowest-left limit's.
-
-**The selected account's card** stands right under the row that selected it
-(under its row's reset schedule, before that row's timeline), under Together
-when a square selected it, and under the account's row when the account list
-did (under the list's head while the list is folded). It leads with what its
-limits allow together for the chosen model — held by what until when, when it
-may run again, or why it is incomplete — and what its own recent mix could
-still run, then everything 0.9 showed (each limit's share with its reset as
-relative and local date, credits, cooldowns, model holds, diagnostics).
-Choosing another account replaces the one card; Clear or Escape gives the
-keyboard back to what opened it. Polls and theme changes keep the selection
-and the scroll; the keyboard is given back without scrolling. An account that
-leaves an account list read now closes its card with a note in its place
-("… is no longer in the account list (read 14:05)"), the keyboard moving to
-the note when it was in the card; Dismiss or Escape clears it. When every
-account of its family left with it, the note stands where the card would in
-the family then on screen and says so ("…, nor is any other Claude Code
-account"). Only what a
-click has just opened — a card, a reset list, "Other limits", a timeline —
-eases in (160 ms, opacity and 4 px), never a mount or a poll's redraw, and
-nothing moves under reduced motion. A screen kept after a failed
-read withdraws Together: who is free rests on current readings.
-
-**The tool.** `quota_summary` adds two optional parameters, `model` (an exact
-full name: that choice in full, else the shared limits with `model_note`) and
-`request_kind` (text by default), and `together` per family: the shared
-limits' counts, what holds them and the next conditional unlock (or the chosen
-model's), `named_models` with each name's counts, `workload` with its headline,
-the first events that change something in each future (refills that change
-nothing counted; events past the answer's first 48 counted as
-`later_events_not_listed`), and the assumptions — never an account's identity.
-With `detail`, each limit also carries its whole `reset_schedule`.
-
-This work does not establish or fix the cause of the previously reported
-native `Script error`.
 
 ## What changed in 0.9.0: last-known history and manual reset credits
 
@@ -380,10 +171,8 @@ One screen, one story per limit, instead of four panels side by side:
   carries the timeline's chart mark with "Show chart" (on the limit in the
   timeline, "Hide chart", which folds it) — one button, its spoken label
   unchanged.
-- **The timeline**, open on every mount — 0.10.0: on the limits together,
-  under Together; see "What changed in 0.10.0" — stands directly under the
-  selected limit's row once its row's control chooses it (with no Together
-  view in the answer, the family's "lowest left"): the recorded past and
+- **The timeline**, open on every mount, stands directly under the selected
+  limit's row (by default the family's "lowest left"): the recorded past and
   **one** future, chosen beside the chart — *No new use* (the default) or
   *Recent pace* — both of the accounts read now, starting from the row's own
   figure. Under the chart, in this order: where that future stands a few
@@ -842,12 +631,10 @@ The group pace is the sum over accounts whose pace is known; with
 some unknown it is "at least" that and marked partial.
 
 **The timeline** stands under the selected limit's row and is open on every
-mount (0.10.0: on the limits together, which need no chart of one limit —
-the widget sends `chart=0` until a row's control chooses a limit; then it
-asks the route for that limit's chart, unless the answer at hand carries it;
-folded with the row's "Hide chart", it sends `chart=0` and the chart and its
-longer history read are not computed). It shows one group (a limit its row
-chose; with no Together view, the family's "lowest left" limit, which is then
+mount (the widget then asks the route for it; folded with the row's "Hide
+chart", it sends `chart=0` and the chart and its longer history read are not
+computed). It shows one group (by default the family's "lowest left" limit,
+which is then
 kept as a pick is: an answer during an outage that names another limit
 "lowest left" does not move it — only a click, or the limit's absence from a
 whole answer, chooses again) over 24 hours or 7 days back and ahead — the
@@ -958,8 +745,7 @@ local time zone, with their day and month.
 
 ## Model tool: quota_summary
 
-`quota_summary(harness?: string, detail?: boolean, model?: string, request_kind?: string)`
-returns compact JSON (`together`, `model` and `request_kind`: see 0.10.0 above): per
+`quota_summary(harness?: string, detail?: boolean)` returns compact JSON: per
 group the family, limit, duration, remaining account-windows and measured
 accounts, average, unrestricted windows, coverage, restrictions (by kind:
 `cooling`, `model_exhausted`, `other_limit_spent`, `disabled`, `signed_out`,
@@ -1113,13 +899,6 @@ exhausted window is never reported as the default login's.
    verified claim; rotation wording counts only accounts actually signed in,
    and with the account list not read now no account is "next up"
    (`routing_read: false`): a kept list's routing verdict is last known.
-7. **Together is a conjunction, never a minimum or a sum of unlike numbers.**
-   No percentage of one limit is compared with another's, and no pool total
-   stands for what accounts can run: an account is free only while every
-   limit that applies to it has quota. Unknown scope or reading is
-   incomplete, never free and never held; account-hours come only from rates
-   measured over one common stretch, and an account whose rates cannot be
-   measured so is left out, said, never counted as zero or endless.
 
 ## Interactive Features
 
@@ -1152,15 +931,7 @@ exhausted window is never reported as the default login's.
   Who stands in no row (switched off, or with no reading of these
   limits here or in the history) is counted in one short link that opens the
   account list, where they are named.
-- **Together** (0.10.0, above the limits): the model choice, one square per
-  account, the free count, the account-hours of their own recent mix, what
-  holds the rest and the earliest unlock; the one timeline opens under it as
-  the limits together on every mount (its control folds it). See "What
-  changed in 0.10.0".
-- **Resets and Other limits** (0.10.0): each row's next reported reset, as
-  relative and local date, opens every reported reset under the row; limits
-  known only from the history fold into one "Other limits" line.
-- **The timeline** under Together, or under the row whose control chose its limit: its span (24 h, 7 days) and
+- **The timeline** under the selected row: its span (24 h, 7 days) and
   future (No new use, Recent pace) controls; the chart; then the legend
   with each line's accounts and the future's assumptions, the checkpoints,
   the first two reported resets (the rest on request), and "Details, notes

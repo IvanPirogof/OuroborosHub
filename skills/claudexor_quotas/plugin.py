@@ -1360,17 +1360,12 @@ def reserve_view(
     cached: Optional[Dict[str, float]] = None,
     reads: Optional[Dict[str, str]] = None,
     name_accounts: bool = False,
-    request_kind: str = qs.DEFAULT_REQUEST_KIND,
-    model: str = "",
 ) -> Dict[str, Any]:
     """The one reserve calculation the widget and the tool share. History is
     read, never written, here. ``cached``/``reads``: see build_view.
     ``name_accounts`` puts the widget's account key on each bar — the widget
     route only, beside the account list it already sends; the tool and every
-    other answer carry no account identity. ``request_kind`` is the kind of
-    request the limits are judged together for (text unless asked);
-    ``model`` the full model name the tool asks for, kept as a choice even
-    past the bound on choices."""
+    other answer carry no account identity."""
     def read(norm: qs.Normalized, groups: List[qs.GroupCalc],
              chart_for: Optional[qs.GroupCalc]) -> qs.HistoryView:
         if store is None:
@@ -1401,7 +1396,7 @@ def reserve_view(
     out: Dict[str, Any] = {
         "summary": qs.build_summary(payload, view, now, status_read_at=status_read_at, state=state,
                                     reads=reads if reads is not None else qs.facet_reads(payload),
-                                    name_accounts=name_accounts, request_kind=request_kind, model=model),
+                                    name_accounts=name_accounts),
     }
     if chart:
         out["chart"] = qs.build_chart(state, chart_calc.key if chart_calc else "", harness, horizon)
@@ -1655,10 +1650,6 @@ TOOL_DESCRIPTION = (
     "dated last-known windows, coverage, restrictions (disabled, signed out, "
     "cooling down, another limit spent), next reported reset, even pace to that "
     "reset, recent pace from local history and a one-line headline per limit. "
-    "Under together: per family and model choice, how many accounts have no "
-    "known restriction when every applicable limit (five-hour, weekly, model) is "
-    "taken at once, what holds the rest and until when, account-hours of each "
-    "account repeating its own recent mix, and the reported events ahead. "
     "Reads the host's "
     "cached status and this skill's own history; never refreshes a provider and "
     "never changes model or account pins. Optional: consult before choosing "
@@ -1676,15 +1667,6 @@ TOOL_SCHEMA: Dict[str, Any] = {
             "type": "boolean",
             "description": "Also return plan breakdowns and why recent pace is unknown.",
         },
-        "model": {
-            "type": "string",
-            "description": "Optional exact model name: under together, keep only the choice whose "
-                           "model-scoped limits name it (else the shared limits).",
-        },
-        "request_kind": {
-            "type": "string",
-            "description": "Optional request kind the limits are judged together for; text by default.",
-        },
     },
     "additionalProperties": False,
 }
@@ -1698,13 +1680,8 @@ def tool_answer(
     *,
     fetch: Optional[Callable[[], Tuple[Optional[Dict[str, Any]], str]]] = None,
     now: Optional[float] = None,
-    model: Any = "",
-    request_kind: Any = "",
 ) -> Dict[str, Any]:
     wanted = str(harness or "").strip()[:64] if isinstance(harness, str) else ""
-    model_name = str(model or "").strip()[:200] if isinstance(model, str) else ""
-    kind = (str(request_kind or "").strip()[:64] if isinstance(request_kind, str) else "") \
-        or qs.DEFAULT_REQUEST_KIND
     cached = latest.get(REUSE_MAX_AGE_SEC)
     if cached is not None:
         payload, error, read_at = cached[0], "", cached[1]
@@ -1720,9 +1697,8 @@ def tool_answer(
     moment = time.time() if now is None else now
     effective, cached = latest.effective(payload)
     result = reserve_view(history_store(api), effective, None if error else read_at, moment,
-                          chart=False, cached=cached, reads=qs.facet_reads(payload), request_kind=kind,
-                          model=model_name)
-    answer = qs.compact(result["summary"], wanted, detail is True, model_name)
+                          chart=False, cached=cached, reads=qs.facet_reads(payload))
+    answer = qs.compact(result["summary"], wanted, detail is True)
     answer["passive_read"] = passive_read_info(payload, error)
     if len(answer["groups"]) > TOOL_MAX_GROUPS:
         answer["groups_omitted"] = len(answer["groups"]) - TOOL_MAX_GROUPS
@@ -1881,10 +1857,9 @@ def register(api: Any) -> None:
             }
         return updates
 
-    def quota_summary_tool(ctx: Any = None, harness: str = "", detail: bool = False,
-                           model: str = "", request_kind: str = "") -> str:
+    def quota_summary_tool(ctx: Any = None, harness: str = "", detail: bool = False) -> str:
         try:
-            answer = tool_answer(api, latest, harness, detail, model=model, request_kind=request_kind)
+            answer = tool_answer(api, latest, harness, detail)
         except Exception as exc:
             api.log("error", f"claudexor quota_summary failed: {type(exc).__name__}: {exc}")
             answer = {"error": f"quota summary failed ({type(exc).__name__}); nothing is claimed"}

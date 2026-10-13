@@ -245,27 +245,11 @@ NODE_REPAIR = r"""
     }
     await settle();
   }
-  // 0.10.0: the timeline is open on every mount, on the limits together:
-  // the first answer (which carries no chart here) asks for no chart of one
-  // limit, and answers that name another limit "lowest left" leave it there.
-  await drain(env, fx.weekly_tightest);
-  assert.equal(asked.at(-1), null, 'opens on the limits together');
-  assert.equal(byFocus(env.root, 'limit:joint').getAttribute('aria-pressed'), 'true');
-  for (const next of [fx.five_hour_tightest_degraded, fx.five_hour_tightest]) {
-    const from = asked.length;
-    env.poll();
-    await drain(env, next);
-    assert.ok(asked.length > from);
-    asked.slice(from).forEach((g) => assert.equal(g, null, 'kept across answers'));
-  }
-  // A limit's own record, chosen on its row: it stays while answers name
-  // another limit "lowest left".
-  const weekly = fx.weekly_tightest.reserve.summary.groups.find((g) => /\|secondary\|/.test(g.key)).key;
-  let from = asked.length;
-  click(env, 'limit:' + weekly);
+  // 0.8.0: the timeline is open on every mount, so the first answer (which
+  // carries no chart here) is followed by one request for the chart.
   await drain(env, fx.weekly_tightest);
   const opened = asked.at(-1);
-  assert.match(opened, /\|secondary\|/, 'a click on its row opens the weekly limit');
+  assert.match(opened, /\|secondary\|/, 'opens on the lowest-left limit');
   for (const next of [fx.five_hour_tightest_degraded, fx.five_hour_tightest, fx.five_hour_tightest]) {
     const from = asked.length;
     env.poll();
@@ -274,7 +258,7 @@ NODE_REPAIR = r"""
     asked.slice(from).forEach((g) => assert.equal(g, opened, 'kept across answers'));
   }
   const fiveHour = fx.weekly_tightest.reserve.summary.groups.find((g) => /\|primary\|/.test(g.key)).key;
-  from = asked.length;
+  let from = asked.length;
   click(env, 'limit:' + fiveHour);
   await drain(env, fx.weekly_tightest);
   assert.ok(asked.slice(from).includes(fiveHour), 'a click chooses: ' + asked.slice(from));
@@ -287,20 +271,16 @@ NODE_REPAIR = r"""
   await drain(env, fx.weekly_only);
   env.poll();
   await drain(env, fx.weekly_only);
-  // Gone from a whole answer: the view opens as on a mount, on the limits together.
-  assert.equal(asked.at(-1), null, 'gone from a whole answer: ' + asked.slice(from));
-  assert.equal(byFocus(env.root, 'limit:joint').getAttribute('aria-pressed'), 'true');
+  assert.match(asked.at(-1), /\|secondary\|/, 'gone from a whole answer: ' + asked.slice(from));
 
   // D6: fresh -> degraded -> failed read keeps the degraded (newer) screen;
   // a semantic-empty answer is not drawn; the next whole answer recovers.
   // (The timeline is folded here: one read per poll, never a chart.)
   env = bootControlled();
   await drain(env, fx.weekly_tightest);
-  // 0.8.1: the charted row's own control folds the timeline (0.10.0: the
-  // Together row's, charted on a mount).
+  // 0.8.1: the charted row's own control folds the timeline.
   const charted = fx.weekly_tightest.reserve.summary.groups.find((g) => g.tightest).key;
-  click(env, 'limit:joint');
-  assert.equal(byFocus(env.root, 'limit:joint').getAttribute('aria-pressed'), 'false');
+  click(env, 'limit:' + charted);
   assert.equal(byFocus(env.root, 'limit:' + charted).getAttribute('aria-pressed'), 'false');
   assert.equal(classes(env.root, 'tl-block').length, 0);
   env.poll();

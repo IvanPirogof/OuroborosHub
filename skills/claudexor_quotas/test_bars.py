@@ -278,10 +278,6 @@ def test_dense_rows_fit_real_iframe_around_responsive_breakpoints(tmp_path, engi
             errors = []
             page.on('pageerror', lambda error: errors.append(str(error)))
             frame = _mount_layout_frame(page, view, 678)
-            # 0.10.0: a mount opens the limits-together timeline; a limit's
-            # own is its row's control away.
-            joint = frame.locator('.j-chart').count() > 0
-            frame.locator('.l-chart').first.click()
             # Both sides of every row breakpoint, the reported 521 px case,
             # the owner's normal card and narrow card widths.
             for width in (320, 343, 359, 360, 361, 519, 520, 521, 639, 640, 641, 678):
@@ -292,11 +288,6 @@ def test_dense_rows_fit_real_iframe_around_responsive_breakpoints(tmp_path, engi
                 # tracks or displace the aligned control column.
                 frame.locator('.l-chart[aria-pressed="true"]').click()
                 _assert_row_geometry(frame.evaluate(ROW_GEOMETRY))
-                if joint:
-                    # Nor must the limits-together timeline, opened and folded.
-                    frame.locator('.j-chart').click()
-                    _assert_row_geometry(frame.evaluate(ROW_GEOMETRY))
-                    frame.locator('.j-chart').click()
                 frame.locator('.l-chart').first.click()
             assert not errors, errors
         finally:

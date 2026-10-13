@@ -267,10 +267,6 @@ NODE_R4 = r"""
     // at now names its own accounts (including carried), separately from the fresh-only future.
     env = bootClock();
     await respond(env, fx.k1_chart);
-    // 0.10.0: the timeline opens on the limits together; the limit's record
-    // is its row's control away, drawn from the answer at hand.
-    click(env, 'limit:' + fx.k1_chart.reserve.chart.group_key);
-    await settle();
     byFocus(env.root, 'chart-plot').listeners.focus[0]();
     const readout = classes(env.root, 'chart-readout')[0].textContent;
     const nowHistory = fx.k1_chart.reserve.chart.history.details.at(-1);
@@ -289,9 +285,6 @@ NODE_R4 = r"""
     // chart's moment.
     env = bootClock();
     await respond(env, fx.k1);
-    // 0.10.0: the limit's record (its chart and details) on its row's control.
-    click(env, 'limit:' + fx.k1.reserve.chart.group_key);
-    await settle();
     click(env, 'accounts');
     click(env, 'acct:codex:a');
     await settle();

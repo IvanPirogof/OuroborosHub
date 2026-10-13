@@ -1555,14 +1555,6 @@ const hasSvg = (root) => walk(root).some((n) => n.getAttribute('class') === 'cha
 const rowOf = (env, key) => byFocus(env.root, 'limit:' + key).parentNode;
 const has = (c, name) => String(c.className).split(/\s+/).includes(name);
 const paths = (env) => walk(env.root).filter((n) => n.tagName === 'PATH').map((n) => n.getAttribute('class'));
-// 0.10.0: the timeline opens on the limits taken together; one limit's own
-// record is one click on its row away (the limit the answer's chart is of).
-async function bootRaw(view, key) {
-  const env = await boot(view);
-  click(env, 'limit:' + (key || view.reserve.chart.group_key));
-  await settle();
-  return env;
-}
 
 (async () => {
   const fixture = JSON.parse(process.env.RESERVE_FIXTURE);
@@ -1575,22 +1567,11 @@ async function bootRaw(view, key) {
   assert.equal(chart.group_key, tight.key, 'the skill charts the tightest limit by default');
 
   // 1. The first screen: every limit as one row with the skill's own figures,
-  // the tightest marked. 0.10.0: the timeline opens on the limits taken
-  // together, which need no chart of one limit (chart=0); the tightest
-  // limit's own record is one click on its row away, drawn from the answer
-  // at hand when it carries that chart — nothing more is asked.
+  // the tightest marked and in the timeline, which is open and drawn from the
+  // first answer — nothing more is asked.
   let env = await boot(fixture.view);
   let text = env.root.textContent;
   assert.match(text, /Reserve · Codex/);
-  assert.ok(hasSvg(env.root), 'the timeline is open on every mount');
-  assert.equal(byFocus(env.root, 'limit:joint').textContent, 'Hide chart');
-  assert.equal(classes(env.root, 'l-chart').filter((b) => has(b, 'on')).length, 0, 'no limit charted by default');
-  assert.equal(env.calls.length, 1, env.calls.map((c) => c.url).join());
-  assert.match(env.calls[0].url, /chart=0/);
-  assert.doesNotMatch(env.calls[0].url, /reuse=1|group=/);
-  click(env, 'limit:' + tight.key);
-  await settle();
-  text = env.root.textContent;
   groups.forEach((g) => {
     // The figure is the skill's own current windows alone, of the accounts it
     // applies to; last-known windows are said under it, never added in.
@@ -1623,6 +1604,7 @@ async function bootRaw(view, key) {
   assert.equal(byFocus(env.root, 'limit:' + other.key).textContent, 'Show chart');
   assert.equal(env.calls.length, 1, env.calls.map((c) => c.url).join());
   assert.ok(env.calls[0].url.startsWith(PREFIX + 'quotas?'));
+  assert.doesNotMatch(env.calls[0].url, /chart=0|reuse=1/);
   // The tightest row wears the mark, in words too, and is the one in the timeline.
   const tightName = byFocus(env.root, 'limit:' + tight.key);
   assert.equal(classes(rowOf(env, tight.key), 'rs-tight').length, 1);
@@ -1731,11 +1713,6 @@ async function bootRaw(view, key) {
   const noChart = JSON.parse(JSON.stringify(fixture.view));
   delete noChart.reserve.chart;
   env = await boot((url) => (/chart=0/.test(url) ? noChart : fixture.view));
-  // 0.10.0: the limit's record first, on its row's control: asked once, with reuse.
-  click(env, 'limit:' + tight.key);
-  await settle();
-  assert.match(env.calls.at(-1).url, /reuse=1/);
-  assert.ok(hasSvg(env.root));
   // 0.8.1: the charted row's own control folds it; folded, nothing stands
   // under the row and no row is drawn as charted.
   click(env, 'limit:' + tight.key);
@@ -1758,8 +1735,6 @@ async function bootRaw(view, key) {
   // open, they survive the timed redraw, with the keyboard on them. About
   // carries the unit and the caveats, folded until asked.
   env = await boot(fixture.view);
-  click(env, 'limit:' + tight.key);
-  await settle();
   const details = classes(env.root, 'chart-table')[0];
   text = details.textContent;
   assert.match(text, /mixed plans/);
@@ -1802,7 +1777,7 @@ async function bootRaw(view, key) {
 
   // 5. Warming up and an unavailable overview are said in words; the account
   // list stands open when there is no overview to fold it under.
-  env = await bootRaw(fixture.warming);
+  env = await boot(fixture.warming);
   assert.match(classes(env.root, 'chart-table')[0].textContent, /warming up/);
   assert.match(classes(env.root, 'chart-table')[0].textContent, /at least 15 minutes.*trailing hour/);
   click(env, 'scenario:recent_pace');
@@ -1816,7 +1791,7 @@ async function bootRaw(view, key) {
 
   // 6. Two limits with one label, "7 day (Fable)", scoped to different models
   // stay two limits on screen, in words and in what a screen reader hears.
-  env = await bootRaw(fixture.scoped);
+  env = await boot(fixture.scoped);
   const rows = classes(env.root, 'lrow');
   assert.equal(rows.length, 2);
   // 0.8.1: the row's spoken summary is on its one control (.l-chart).
@@ -1847,11 +1822,11 @@ async function bootRaw(view, key) {
   delete lc.history; // Legacy answer compatibility: strict measured-only series.
   const mid = lc.now - 600;
   lc.past = [[lc.start, null], [mid, 1.2], [mid, null], [lc.now, null]];
-  env = await bootRaw(lone);
+  env = await boot(lone);
   assert.match(classes(env.root, 'chart-legend')[0].textContent, /no record in this span yet/);
   assert.doesNotMatch(classes(env.root, 'chart-legend')[0].textContent, /recorded · /);
   lc.past = [[lc.start, null], [mid, 1.2], [mid + 300, null], [lc.now, null]];
-  env = await bootRaw(lone);
+  env = await boot(lone);
   assert.match(classes(env.root, 'chart-legend')[0].textContent,
                new RegExp('recorded · ' + lc.past_accounts + ' accounts?'));
 
@@ -1867,7 +1842,7 @@ async function bootRaw(view, key) {
     assert.equal(c.scenarios.recent_pace.at_pace, 0);
     c.past_accounts = count + 1;
     c.past = [[c.now - 600, 1], [c.now, 1]];
-    env = await bootRaw(noPace);
+    env = await boot(noPace);
     click(env, 'scenario:recent_pace');
     const legend = classes(env.root, 'chart-legend')[0].textContent;
     assert.ok(legend.includes('recorded · ' + (count + 1) + ' accounts'), legend);
@@ -2813,10 +2788,6 @@ async function opened(view, sid) {
   // stays a line with breaks, and every such sighting is listed in the data
   // table under Details, the disagreeing one as "not settled".
   env = await boot(fx.chart);
-  // 0.10.0: the timeline opens on the limits together; the limit's record is
-  // its row's control away.
-  click(env, 'limit:' + fx.chart.reserve.chart.group_key);
-  await settle();
   const svgClasses = (name) => walk(env.root).filter((n) =>
     String(n.getAttribute('class') || '').split(/\s+/).includes(name));
   assert.ok(svgClasses('chart-svg').length, 'the timeline is drawn');
@@ -2905,26 +2876,12 @@ async function bootThemed(view) {
   const groups = view.reserve.summary.groups.filter((g) => g.harness === 'codex');
   const tight = groups.find((g) => g.tightest);
 
-  // 1. Each new mount (0.10.0 defaults, never saved): the limits, the
-  // timeline of the limits taken together open under Together with "no new
-  // use" and its own span — a day when every event of that future falls
-  // within one, else a week — no chart of one limit asked for; the account
-  // list folded, no account selected, About shut.
+  // 1. Each new mount (0.8.0 defaults, never saved): the limits, the timeline
+  // of the lowest-left limit open under its row with "no new use" and the
+  // limit's own span, the account list folded, no account selected, About shut.
   let env = await bootThemed(view);
   assert.ok(hasSvg(env.root), 'timeline open by default');
-  assert.match(env.calls[0].url, /chart=0/);
-  assert.equal(byFocus(env.root, 'limit:joint').getAttribute('aria-pressed'), 'true');
-  assert.equal(byFocus(env.root, 'scenario:no_new_use').getAttribute('aria-pressed'), 'true');
-  const fam = view.reserve.summary.together.find((f) => f.harness === 'codex');
-  const nowS = Math.round(Date.parse(view.reserve.summary.generated_at) / 1000);
-  const evs = fam.scenarios.no_new_use.events;
-  const jointSpan = evs.length && evs.every((e) => e.at <= nowS + 86400) ? '24h' : '7d';
-  assert.equal(byFocus(env.root, 'horizon:' + jointSpan).getAttribute('aria-pressed'), 'true');
-  // The lowest-left limit's own record: one click on its row, with the
-  // limit's own span, drawn from the answer at hand.
-  click(env, 'limit:' + tight.key);
-  await settle();
-  assert.ok(hasSvg(env.root));
+  assert.doesNotMatch(env.calls[0].url, /chart=0/);
   assert.equal(byFocus(env.root, 'scenario:no_new_use').getAttribute('aria-pressed'), 'true');
   assert.equal(byFocus(env.root, 'horizon:' + (tight.window_seconds > 86400 ? '7d' : '24h')).getAttribute('aria-pressed'), 'true');
   assert.equal(byFocus(env.root, 'accounts').getAttribute('aria-expanded'), 'false');
@@ -3001,8 +2958,6 @@ async function bootThemed(view) {
   // session is kept.
   env = await bootThemed(view);
   assert.ok(hasSvg(env.root));
-  assert.equal(byFocus(env.root, 'limit:joint').getAttribute('aria-pressed'), 'true');
-  assert.equal(byFocus(env.root, 'limit:' + tight.key).getAttribute('aria-pressed'), 'false');
   assert.equal(classes(env.root, 'inspector').length, 0);
   assert.equal(byFocus(env.root, 'accounts').getAttribute('aria-expanded'), 'false');
 
@@ -3039,8 +2994,6 @@ async function bootThemed(view) {
   });
   try {
     env = await boot(view);
-    click(env, 'limit:' + tight.key);
-    await settle();
     const plot = byFocus(env.root, 'chart-plot');
     plot.focus();
     plot.listeners.focus[0]();
@@ -3604,10 +3557,6 @@ NODE_GAP_SINGLETON = r"""
   const view = JSON.parse(process.env.GAP_FIXTURE);
   delete view.reserve.chart.history; // Legacy strict-series fallback remains supported.
   const env = await boot(view);
-  // 0.10.0: the timeline opens on the limits together; this limit's record
-  // is its row's control away, drawn from the answer at hand.
-  byFocus(env.root, 'limit:' + view.reserve.chart.group_key).listeners.click[0]({ stopPropagation() {} });
-  await settle();
   const svg = walk(env.root).find((n) => n.getAttribute('class') === 'chart-svg');
   assert.ok(svg, 'the chart is drawn');
   const cls = (n) => String(n.getAttribute('class') || '').split(/\s+/);
@@ -3936,14 +3885,6 @@ function expectPage(env, points, lo, hi) {
   assert.match(text, new RegExp(points.length + ' totals seen at one sweep only are listed separately below'));
 }
 const at = (env, key) => byFocus(env.root, key);
-// 0.10.0: the timeline opens on the limits together; the limit's record,
-// with its sightings under Details, is its row's control away.
-async function bootRaw(view, key) {
-  const env = await boot(view);
-  click(env, 'limit:' + key);
-  await settle();
-  return env;
-}
 const disabled = (env, key) => at(env, key).getAttribute('aria-disabled') === 'true';
 
 (async () => {
@@ -3952,7 +3893,7 @@ const disabled = (env, key) => at(env, key).getAttribute('aria-disabled') === 't
   // More than the table's newest 8, fewer than a page: every one, no pages.
   const few = fx.small.reserve.chart.points;
   assert.ok(few.length > 8 && few.length <= 20, String(few.length));
-  let env = await bootRaw(fx.small, fx.small.reserve.chart.group_key);
+  let env = await boot(fx.small);
   expectPage(env, few, 0, few.length);
   assert.equal(at(env, 'sightings:older'), undefined);
   // The recorded sample keeps its own count and lists no sighting.
@@ -3963,7 +3904,7 @@ const disabled = (env, key) => at(env, key).getAttribute('aria-disabled') === 't
   const N = points.length;
   assert.ok(N > 40, String(N));
   let current = fx.view;
-  env = await bootRaw((url) => (/horizon=24h/.test(url) ? fx.day : current), fx.view.reserve.chart.group_key);
+  env = await boot((url) => (/horizon=24h/.test(url) ? fx.day : current));
   const open = details(env);
   open.open = true;
   open.listeners.toggle[0]();
@@ -4135,17 +4076,8 @@ function expectCharted(env, shown, other) {
     assert.match(classes(name, 'l-name-text')[0].textContent, key === five ? /^5-hour$/ : /^Weekly$/);
   });
   assert.equal(classes(env.root, 'chart-toggle').length, 0, 'no second toggle inside the timeline');
-  // 0.10.0: the timeline opens on the limits together — no limit charted, no
-  // chart of one limit asked for. The family's lowest-left limit, the 5-hour
-  // one, is its row's control away, drawn from the answer at hand.
-  assert.equal(byFocus(env.root, 'limit:joint').getAttribute('aria-pressed'), 'true');
-  assert.equal(below(env, five), null);
-  assert.equal(env.calls.length, 1);
-  assert.match(env.calls[0].url, /chart=0/);
-  nameOf(env, five).listeners.click[0]({ stopPropagation() {} });
-  await settle();
+  // The family's lowest-left limit, the 5-hour one, is charted first.
   expectCharted(env, five, week);
-  assert.equal(byFocus(env.root, 'limit:joint').getAttribute('aria-pressed'), 'false');
   assert.equal(env.calls.length, 1);
 
   // 5 hour -> weekly: the weekly name asks once, with reuse, for its chart
@@ -4235,14 +4167,6 @@ function withPoints(view, points) {
   out.reserve.chart.points = points;
   return out;
 }
-// 0.10.0: the timeline opens on the limits together; the limit's record,
-// with its sightings under Details, is its row's control away.
-async function bootRaw(view, key) {
-  const env = await boot(view);
-  click(env, 'limit:' + key);
-  await settle();
-  return env;
-}
 async function poll(env) {
   const before = env.calls.length;
   env.interval()();
@@ -4258,7 +4182,7 @@ async function poll(env) {
 
   // 45 → 20 or fewer → none, the keyboard on Older throughout.
   let current = fx.view;
-  let env = await bootRaw(() => current, fx.view.reserve.chart.group_key);
+  let env = await boot(() => current);
   details(env).open = true;
   details(env).listeners.toggle[0]();
   click(env, 'sightings:older');
@@ -4294,7 +4218,7 @@ async function poll(env) {
   // Away to a span with no sightings yet and back: the newest page again.
   let day = withPoints(fx.day, []);
   current = fx.view;
-  env = await bootRaw((url) => (/horizon=24h/.test(url) ? day : current), fx.view.reserve.chart.group_key);
+  env = await boot((url) => (/horizon=24h/.test(url) ? day : current));
   details(env).open = true;
   details(env).listeners.toggle[0]();
   click(env, 'sightings:older');
