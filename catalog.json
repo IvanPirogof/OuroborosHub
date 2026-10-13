@@ -2197,6 +2197,41 @@
           "sha256": "1109872bccdcd5064442a3880cbaf8d77fbb052a09b6e2f940d1dc8f2ce02ce7"
         }
       ]
+    },
+    {
+      "description": "Optional local Whisper voice input for an editable Ouroboros composer draft.",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "30514d08bd376ae1a08cf3b4bc0671f8256a485bd9078d6d9fcdad51beb08764",
+          "size": 4815
+        },
+        {
+          "path": "plugin.py",
+          "sha256": "487f27fdfee06e1ef198a1140589b806e05fe5d77fb88e17b49bb9ab26827626",
+          "size": 7411
+        },
+        {
+          "path": "scripts/companion.py",
+          "sha256": "306ae87df0cf511a882c95f002d68743e03ab4e3ae594070443d3f5fe64de9b1",
+          "size": 12182
+        },
+        {
+          "path": "tests/test_voice.py",
+          "sha256": "007ee0f6cfa96adf87c92313fa78985be5105f6c05136b6de11d34013df3350f",
+          "size": 12170
+        },
+        {
+          "path": "whisper_runtime.py",
+          "sha256": "eabc7cc34476ab5744a26759c6bf8bdce6544941bb51a22584ec0a339257e9e3",
+          "size": 5322
+        }
+      ],
+      "name": "whisper-voice",
+      "slug": "whisper-voice",
+      "type": "extension",
+      "version": "0.1.0",
+      "when_to_use": "The owner explicitly enables optional local voice input in the composer."
     }
   ]
 }
