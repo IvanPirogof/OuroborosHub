@@ -80,6 +80,7 @@ class Engine:
                     self.loaded_path = ""
 
     def status(self) -> dict:
+        settings = {"model_path": "", "always_resident": False}
         try:
             settings = read_settings(STATE)
             directory = model_directory(settings["model_path"])
@@ -89,14 +90,13 @@ class Engine:
             if missing:
                 reason = "Isolated voice dependencies missing: " + ", ".join(missing)
         except Exception as exc:
-            settings = {"model_path": "", "always_resident": False}
             directory = None
             reason = str(exc)
         with self.lock:
             return {
                 "ready": directory is not None and not reason and not self.installing,
                 "resident": self.model is not None,
-                "model": str(directory or ""),
+                "model": str(directory or settings["model_path"]),
                 "always_resident": settings["always_resident"],
                 "idle_expiry_sec": 0 if settings["always_resident"] else IDLE_SECONDS,
                 "installing": self.installing,

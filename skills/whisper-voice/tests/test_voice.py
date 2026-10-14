@@ -236,6 +236,15 @@ def test_supervised_companion_loopback_auth_and_readiness(tmp_path):
         assert details["voice"]["message"]
         assert request(port, token, "POST", "/models/install", b'{"model":"arbitrary"}')[0] == 400
         assert request(port, token, "POST", "/transcribe", b"not audio", "audio/webm")[0] == 400
+        status, selected = request(port, token, "POST", "/settings", json.dumps({
+            "model_path": str(model), "always_resident": True,
+        }).encode())
+        assert status == 200 and selected["always_resident"] is True
+        (model / "tokenizer.json").unlink()
+        status, unavailable = request(port, token, "GET", "/status")
+        assert status == 200 and unavailable["ready"] is False
+        assert unavailable["model"] == str(model) and unavailable["always_resident"] is True
+        assert unavailable["reason"]
     finally:
         child.terminate()
         child.wait(timeout=5)

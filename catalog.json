@@ -2213,13 +2213,13 @@
         },
         {
           "path": "scripts/companion.py",
-          "sha256": "7bc05278a16491cf44defdcf37714d8a6bbe393d2c69671fc2e63e7ce91952b9",
-          "size": 12182
+          "sha256": "728a4bdb8c75f6a9a226d67e12446719c06450d3a61e4078cb0ad23efa051fe8",
+          "size": 12198
         },
         {
           "path": "tests/test_voice.py",
-          "sha256": "9fa15529f632ec521998a1db9e058fe44bfc1cf4e3be8ecf382860a2992a7909",
-          "size": 12673
+          "sha256": "940f7b9d0c2b3918d75d3731d51fa7b89d333397d659440d0fb27eadb0df263c",
+          "size": 13214
         },
         {
           "path": "whisper_runtime.py",
