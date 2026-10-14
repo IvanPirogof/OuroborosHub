@@ -2203,23 +2203,23 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "30514d08bd376ae1a08cf3b4bc0671f8256a485bd9078d6d9fcdad51beb08764",
-          "size": 4815
+          "sha256": "f45fa03480c9432f40a96fe2fd87da786f91b14dbf32d8303e80a0075cafa1f9",
+          "size": 4900
         },
         {
           "path": "plugin.py",
-          "sha256": "487f27fdfee06e1ef198a1140589b806e05fe5d77fb88e17b49bb9ab26827626",
+          "sha256": "5722d322d5c2b27a5906131ebbcfcc9d4b0b95488cb0cbe3e9ea13c470bc6474",
           "size": 7411
         },
         {
           "path": "scripts/companion.py",
-          "sha256": "306ae87df0cf511a882c95f002d68743e03ab4e3ae594070443d3f5fe64de9b1",
+          "sha256": "7bc05278a16491cf44defdcf37714d8a6bbe393d2c69671fc2e63e7ce91952b9",
           "size": 12182
         },
         {
           "path": "tests/test_voice.py",
-          "sha256": "007ee0f6cfa96adf87c92313fa78985be5105f6c05136b6de11d34013df3350f",
-          "size": 12170
+          "sha256": "9fa15529f632ec521998a1db9e058fe44bfc1cf4e3be8ecf382860a2992a7909",
+          "size": 12673
         },
         {
           "path": "whisper_runtime.py",

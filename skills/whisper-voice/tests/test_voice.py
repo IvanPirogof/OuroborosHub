@@ -279,3 +279,15 @@ def test_real_plugin_route_forwards_raw_audio_over_private_loopback(tmp_path):
         assert server.observed == ('x' * 32, audio)
         server.shutdown()
         thread.join(timeout=2)
+
+
+def test_download_failure_is_visible_even_when_model_is_still_missing():
+    from starlette.responses import JSONResponse
+
+    plugin = load_plugin()
+    response = plugin._settings_response(JSONResponse({
+        "ready": False, "reason": "selected local model directory is missing",
+        "install_error": "network download failed", "install_notice": "",
+    }))
+    visible = json.loads(response.body)
+    assert visible["voice"] == {"state": "unavailable", "message": "network download failed"}

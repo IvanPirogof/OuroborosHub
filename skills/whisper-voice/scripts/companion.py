@@ -155,7 +155,7 @@ class Engine:
                 self.loaded_path = path
             # faster-whisper returns a lazy generator: consume it before releasing
             # the lock so idle eviction cannot race a transcription.
-            segments, _info = self.model.transcribe(audio, language="ru", beam_size=3, vad_filter=True)
+            segments, _info = self.model.transcribe(audio, language=None, beam_size=3, vad_filter=True)
             words = " ".join(segment.text.strip() for segment in segments).strip()
             self.last_use = time.monotonic()
         if len(words) > 8000:

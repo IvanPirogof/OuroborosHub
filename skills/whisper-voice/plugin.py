@@ -50,7 +50,7 @@ def _settings_response(response: JSONResponse) -> JSONResponse:
         state = "downloading" if data.get("installing") else "ready" if data.get("ready") else "unavailable"
         data["voice"] = {
             "state": state,
-            "message": data.get("reason") or data.get("install_error") or data.get("install_notice") or
+            "message": data.get("install_error") or data.get("reason") or data.get("install_notice") or
                        ("Model is ready for local speech" if state == "ready" else "Voice unavailable"),
         }
     return JSONResponse(data, status_code=response.status_code)
