@@ -178,7 +178,10 @@ def test_unusable_retained_receipt_keeps_the_event_queued(tmp_path, payload):
     asyncio.run(run())
 
 
-def test_unresolved_continuing_author_keeps_released_output_and_child_and_stays_observed(tmp_path):
+@pytest.mark.parametrize("child_status,child_outcome", [
+    ("completed", "message"), ("failed", "message"), ("failed", "deferred"), ("completed", "deferred"),
+])
+def test_unresolved_continuing_author_keeps_released_output_and_child_and_stays_observed(tmp_path, child_status, child_outcome):
     async def run():
         host, slack = RefusalHost(), FakeSlack()
         host.scripts["Ev-1"] = lambda body: continuing("turn-1", body, outcome="message", text="Early answer",
@@ -189,7 +192,7 @@ def test_unresolved_continuing_author_keeps_released_output_and_child_and_stays_
                 "code": "presence_attempt_outcome_unknown", "turn_ref": "turn-1", "work_ref": "child-1",
                 "child_work_ref": "child-1"}
         host.work["turn-1"] = [author_pending("turn-1", released), (200, lost)]
-        host.work["child-1"] = [child_done("child-1", "Child result", output_ref="out-child")]
+        host.work["child-1"] = [terminal("child-1", "Child result", status=child_status, outcome=child_outcome, output_ref="out-child")]
         bridge = Bridge(tmp_path, host, slack)
         try:
             await bridge.ingest(envelope("Ev-1", ts="1.0", text="Hello"))
@@ -199,7 +202,7 @@ def test_unresolved_continuing_author_keeps_released_output_and_child_and_stays_
                 assert await bridge.inbound.process_once()
             await bridge.send_all()
             assert slack.texts() == ["Early answer", "Child result"]
-            # Unlike a proven-dead author (interrupted), an unresolved one is never failed.
+            # The current Host retains a lost author as unresolved; child lifecycle is separate.
             assert bridge.inbox() == {"Ev-1": "pending"} and "unresolved" in bridge.inbox_error("Ev-1")
             host.work["turn-1"] = [(200, {**_author("turn-1", released, 1), "status": "completed",
                                           "outcome": "message", "text": "Late correction", "output_ref": "out-2",
@@ -208,7 +211,8 @@ def test_unresolved_continuing_author_keeps_released_output_and_child_and_stays_
             assert await bridge.inbound.process_once()
             await bridge.send_all()
             assert slack.texts() == ["Early answer", "Child result", "Late correction"]
-            assert bridge.inbox() == {"Ev-1": "delivered"} and len(host.turn_bodies) == 1
+            assert bridge.inbox() == {"Ev-1": "failed" if child_status == "failed" else "delivered"}
+            assert len(host.turn_bodies) == 1
         finally:
             await bridge.close()
 

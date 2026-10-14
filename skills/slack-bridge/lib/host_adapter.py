@@ -760,7 +760,7 @@ class LoopbackPresenceHostAdapter:
                         if state != "interrupted" and self._outcome(payload) in _SPEECH:
                             output_ref = str(payload.get("output_ref") or "")
                             add(_output_identity(output_ref, f"terminal:{ref}"), str(payload.get("text") or ""), ref, output_ref)
-                    elif state == "completed" and self._outcome(payload) == "message":
+                    elif self._outcome(payload) in _SPEECH:
                         output_ref = str(payload.get("output_ref") or "")
                         add(_output_identity(output_ref, f"work:{source}"), str(payload.get("text") or ""),
                             str(payload.get("turn_ref") or source), output_ref)

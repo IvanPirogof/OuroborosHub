@@ -413,13 +413,17 @@ child's task) and names the carried `output_ref` in the report's `message`.
 Release to the bridge is not proof of Slack delivery; provider receipts keep
 that role.
 
-A lost author (`status: "interrupted"`) is not restarted and its event is not
-resubmitted: once any child has finished, the inbox row ends `failed` with a
-visible error, keeping everything already sent.
+A positively lost author is `status: "unresolved"` with `disposition: "retained"`
+on the current Host. Its input is not resubmitted; the original and real children
+remain independently observed, including after a child finishes. Released outputs
+keep their identities. Older Hosts may return `interrupted`; that legacy shape
+ends the row `failed` after its children finish, preserving sent output.
 
 Older persisted `refused:` references keep their original refusal and any
 admitted child. New `rejected` responses retain their full receipt and end the
-event; new `blocked` responses keep retry custody for configuration repair.
+event; `blocked` refusals before admission keep retry custody for configuration
+repair. An older Host's blocked/retry refusal with an admitted work reference
+keeps the legacy `refused:` observation path instead of resubmitting that event.
 
 With a continuation-capable Host, each submission also carries
 `event.conversation.transport_queue`: a snapshot of this thread's later events
@@ -528,7 +532,7 @@ establish provider-side exactly-once delivery.
 ## Retained input and late results
 
 A typed Host `disposition: retained` means the original event is saved but has
-no confirmed final answer. The transport stores the complete refusal receipt
+no canonical final result to deliver. The transport stores the complete refusal receipt
 with its source event, releases that conversation's input queue, and observes
 the original `turn_ref` and any real child `work_ref` independently. It never
 resubmits that retained event. A child finishing does not erase the original
@@ -538,10 +542,12 @@ A work view with `status: unresolved` remains observable. A failed task may
 still carry a selected answer; lifecycle status alone does not suppress speech.
 Canonical selected
 outputs keep their source and delivery identity across repeated polls and
-restarts; a retained receipt itself is never sent as speech. This does not
+restarts; a retained receipt itself is never sent as speech. A recorded cancellation can remain under
+observation: it proves neither a live executor nor absence of external effects,
+and observation starts no new generation. This does not
 claim exactly-once provider delivery after ambiguous network acceptance.
-`rejected` ends an event-specific refusal; `retry` and `blocked` retain retry
-custody, including after account or binding repair. Missing or unknown typed
+`rejected` ends an event-specific refusal; before-admission `retry` and `blocked`
+retain retry custody, including after account or binding repair. Missing or unknown typed
 dispositions stay retryable, even on HTTP 403/404. Full queue recovery requires
 both an updated Host and this transport; older Hosts may still return a
 retry-only refusal. Existing completed delivery receipts remain unchanged.
