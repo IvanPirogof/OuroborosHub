@@ -215,15 +215,18 @@ def test_cursorless_partial_names_range_continuation_instead_of_repeating_first_
     asyncio.run(run())
 
 
-def test_nonthread_message_does_not_fetch_history(tmp_path):
+def test_reaction_without_known_thread_does_not_fetch_channel_history(tmp_path):
     async def run():
         store, events, reads = BridgeStore(tmp_path), [], []
-        ingest(store, envelope(thread_ts=""))
+        value = envelope(thread_ts="")
+        value["payload"]["event"].update(type="reaction_added", reaction="eyes",
+                                           item={"type": "message", "channel": "C1", "ts": "100.000000"})
+        ingest(store, value)
 
         def provider(request):
             reads.append(request.url.path)
             response = metadata_response(request)
-            assert response is not None, "A nonthread message must not issue a history read"
+            assert response is not None, "A reaction without a known thread must not issue a history read"
             return response
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as slack_http, \
@@ -267,4 +270,47 @@ def test_retry_after_restart_reuses_thread_snapshot_and_next_event_refreshes(tmp
         assert "latest" not in reads[1] and "oldest" not in reads[1]
         with sqlite3.connect(store.path) as db:
             assert db.execute("SELECT COUNT(*) FROM inbox").fetchone()[0] == 2
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("event_type", ["message", "app_mention"])
+@pytest.mark.parametrize("has_reply", [False, True])
+def test_root_message_reads_current_thread_or_singleton_before_submission(tmp_path, event_type, has_reply):
+    async def run():
+        store, events, reads = BridgeStore(tmp_path), [], []
+        value = envelope(thread_ts="")
+        original = value["payload"]["event"]
+        original.update(type=event_type, text="<@U_BOT> Which approach should we use?")
+        original.pop("thread_ts")  # Slack root events have no thread yet at receipt.
+        ingest(store, value)
+        messages = [{"ts": original["ts"], "user": "U1", "text": original["text"]}]
+        if has_reply:
+            messages.append({"ts": "101.000000", "thread_ts": original["ts"], "user": "U2",
+                             "text": "Already resolved; please do not send anything."})
+
+        def provider(request):
+            metadata = metadata_response(request)
+            if metadata is not None:
+                return metadata
+            assert request.url.path == "/api/conversations.replies"
+            parameters = dict(request.url.params)
+            assert parameters["ts"] == original["ts"]
+            assert "latest" not in parameters and "oldest" not in parameters
+            reads.append(parameters)
+            return page(messages)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as slack_http, \
+                host_client(store, events) as host_http:
+            assert await worker(store, SlackClient("xoxb-test", "xapp-test", http_client=slack_http),
+                                host_http, tmp_path).process_once()
+        thread = events[0]["conversation"]["thread_history"]
+        assert thread["status"] == "available" and thread["data"]["complete"] is True
+        assert thread["data"]["thread_ts"] == original["ts"]
+        assert thread["data"]["messages"] == messages
+        assert snapshot(store)["thread"] == thread
+        assert events[0]["text"] == original["text"] and len(reads) == 1
+        # History is context, including a later cancellation, never more inbox work.
+        with sqlite3.connect(store.path) as db:
+            assert db.execute("SELECT event_id,state FROM inbox").fetchall() == [("event-1", "delivered")]
+            assert db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0] == 0
     asyncio.run(run())

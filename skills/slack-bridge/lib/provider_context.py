@@ -45,12 +45,13 @@ async def capture_context(slack: Any, item: Any, workspace_name: str) -> dict[st
         observe("users.info", lambda: slack.user_info(item.actor_user_id)),
         observe("conversations.info", lambda: slack.conversation_info(item.channel_id)),
     ]
-    if item.thread_ts:
+    has_thread = bool(item.thread_ts or item.event_type in {"message", "app_mention"})
+    if has_thread:
         lookups.append(capture_thread(slack, item))
     results = await asyncio.gather(*lookups)
     snapshot = {"user": results[0], "conversation": results[1],
                 "workspace": {"name": workspace_name, "source": "auth.test"}}
-    if item.thread_ts:
+    if has_thread:
         snapshot["thread"] = results[2]
     return snapshot
 
@@ -61,7 +62,7 @@ async def capture_thread(slack: Any, item: Any) -> dict[str, Any]:
     Pages share the existing provider-I/O budget. The dated result is context,
     never additional inbox work or an atomic snapshot of the conversation.
     """
-    arguments = {"channel_id": item.channel_id, "thread_ts": item.thread_ts, "limit": 200}
+    arguments = {"channel_id": item.channel_id, "thread_ts": item.thread_ts or item.message_ts, "limit": 200}
     data: dict[str, Any] = {**arguments, "messages": [], "complete": False,
                            "next_cursor": None, "pages_read": 0}
 

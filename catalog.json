@@ -1473,8 +1473,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "8e05041b483857e00f62dd652a22b0b50800c8b8699b76ec0d417a19fe9d0a44",
-          "size": 37134
+          "sha256": "495d20bf213aeb5077cabe0d4261b5cb1090500e1d1b437c00567f28a7ff1599",
+          "size": 37368
         },
         {
           "path": "lib/__init__.py",
@@ -1503,8 +1503,8 @@
         },
         {
           "path": "lib/provider_context.py",
-          "sha256": "c854a5085a697d3044a9ab1736970c24b4c8ecd25b4365714bd6301522e7490d",
-          "size": 6749
+          "sha256": "fdb2798b076ad045ca439aa78deb762835070605acd4aa3acaef795046f5bf17",
+          "size": 6847
         },
         {
           "path": "lib/read_tools.py",
@@ -1583,8 +1583,8 @@
         },
         {
           "path": "tests/test_delivery_reporting.py",
-          "sha256": "6d7b2c6fdc620cfabde50b75850e06c171dabde9ca5f11c58402c8f28465dbd3",
-          "size": 22245
+          "sha256": "5a08ae68268547eb448f02545b92347825b75435dafcec4a7f57b8c93b078aca",
+          "size": 22429
         },
         {
           "path": "tests/test_directory.py",
@@ -1608,23 +1608,23 @@
         },
         {
           "path": "tests/test_inbound_files.py",
-          "sha256": "92bb846d7d52bc3735269bcaeb9fb3bccfdc5d7d533dc11a9fa3f88be25499c0",
-          "size": 29022
+          "sha256": "697a541994b70ab3c4d81a6b833c1dcea639a278936b8d06aa1d40c2204cbcae",
+          "size": 29244
         },
         {
           "path": "tests/test_inbound_lease.py",
-          "sha256": "bfc7112fc639f5228eb2cace9b7366d56d2661583026bb61487bfda92efef84a",
-          "size": 15864
+          "sha256": "0ffc2916eaba13b9ce44234045ea6bb72a826c014d538ea789e9da50ff6db088",
+          "size": 16048
         },
         {
           "path": "tests/test_inbound_lease_runtime.py",
-          "sha256": "c29f5c59106afca788384c64201e5ac6afa95cf4bdaa90cde7204cde96ed5e20",
-          "size": 12901
+          "sha256": "b3571607f2deaa38893ef9f6ad6214ecac5d4cd32c4a494dd314823d7f113a75",
+          "size": 13111
         },
         {
           "path": "tests/test_message_deletion.py",
-          "sha256": "e1b98a6487d119d9deb5881d7890294c29a7ec7ed1eee9f60fc0eb62374d7ca4",
-          "size": 7019
+          "sha256": "171da8187b3192f3c68dded875616674a4b5bd818f630e7d85d450a00c97b9f6",
+          "size": 7217
         },
         {
           "path": "tests/test_message_format.py",
@@ -1648,13 +1648,13 @@
         },
         {
           "path": "tests/test_presence_process_consumer.py",
-          "sha256": "201b6eec003776baab186591ae17cdd63fb3cd45f2df785a37f16aafd24ac080",
-          "size": 43979
+          "sha256": "03ed1c70f8f18c577b4e89be0342989a842bda816ac8e98767758a37ec6b59af",
+          "size": 44548
         },
         {
           "path": "tests/test_provider_context.py",
-          "sha256": "b3c34ee712e9a4584771a74ed3334f15405d103cd5b3c77624b61f1ed874cc56",
-          "size": 14335
+          "sha256": "3fecb638d592205aa7ab41ddc7f131015a63d9387e509a3642b55d18b515da57",
+          "size": 15055
         },
         {
           "path": "tests/test_read_tools.py",
@@ -1683,8 +1683,8 @@
         },
         {
           "path": "tests/test_thread_context.py",
-          "sha256": "4dbecd8f4bc7347dd7dc33a5037ada9b728fc216ecc63785b776a68bf7ab56bf",
-          "size": 14244
+          "sha256": "33534ef498199eeda2649a01dbadbf9c6b5399526ad44d834e21ef409157b486",
+          "size": 16895
         },
         {
           "path": "tests/test_tool_contract.py",
@@ -1698,8 +1698,8 @@
         },
         {
           "path": "tests/test_workers_plugin.py",
-          "sha256": "7b7085e66d872adb41dcfd5f48fdf6493b0c81ddbb76a67423af70e0e9b0d70a",
-          "size": 41922
+          "sha256": "5293d467e26b697886539a878f36f0608fb5d028bb18524719e1cfcf68afd719",
+          "size": 42106
         }
       ],
       "name": "slack-bridge",

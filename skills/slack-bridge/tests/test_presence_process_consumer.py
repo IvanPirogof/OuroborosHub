@@ -634,8 +634,16 @@ async def _consume(root: Path, host_url: str, identity: dict, provider: Provider
                 return facts
             if scenario == "six":
                 for index in range(6):
-                    await ingest(f"Review-{index}", f"1.{index}", "Please prepare the status report.", f"1.{index}")
-                    assert await inbound.process_once()
+                    event_id = f"Review-{index}"
+                    await ingest(event_id, f"1.{index}", "Please prepare the status report.", f"1.{index}")
+                    # An old author's due poll can win a worker iteration. Keep
+                    # pumping until this new event has its durable Host receipt.
+                    due()  # Exercise that scheduling interleave deliberately.
+                    deadline = time.monotonic() + 60
+                    while not next(row for row in rows("inbox") if row["event_id"] == event_id)["host_reference"]:
+                        assert time.monotonic() < deadline, rows("inbox")
+                        await inbound.process_once()
+                        await asyncio.sleep(0.05)
                 await asyncio.to_thread(_wait, lambda: len(provider.reviews) == 6)
                 assert not provider.release.is_set()
                 parked = rows("inbox")

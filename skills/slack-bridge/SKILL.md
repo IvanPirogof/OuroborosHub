@@ -197,9 +197,12 @@ edited public manifest does not grant scopes to an already-installed app.
 ## Provider context and on-demand reads
 
 After the Socket envelope is durably accepted, the inbound worker looks up its
-exact author with `users.info` and room with `conversations.info`. For an event
-with a thread timestamp it also reads `conversations.replies`, following cursor
-pages within the same ten-second provider-I/O budget (page size 200). These
+exact author with `users.info` and room with `conversations.info`. Messages and
+mentions also read `conversations.replies` using their thread root, or their own
+timestamp when they started the thread. A root with no replies returns its one
+message; a queued root can already have later replies at processing time. Other
+event kinds read thread context when they carry a thread timestamp. Cursor pages
+share the same ten-second provider-I/O budget (page size 200). These
 observations run concurrently outside the Socket acknowledgement handler. The
 worker saves their results, sources and observation times in the existing inbox
 before submitting to Host. A retry or restart reuses that event's snapshot;
