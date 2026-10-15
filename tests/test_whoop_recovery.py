@@ -128,6 +128,15 @@ class RecoveryTests(unittest.TestCase):
                 self.assertTrue(all(value is None for value in result["sleep"].values()))
                 self.assertTrue(all(value is None for value in result["strain"].values()))
 
+    def test_summary_preserves_calibration_flag(self):
+        for flag in [True, False, None]:
+            with self.subTest(flag=flag):
+                self.pages = {("/recovery", ""): {"records": [{"score": {
+                    "recovery_score": 80, "user_calibrating": flag}}]}}
+                result = self.invoke("whoop_summary")["recovery"]
+                self.assertIs(result["user_calibrating"], flag)
+                self.assertEqual(result["recovery_zone"], "green")
+
     def test_missing_scores_and_empty_collections(self):
         self.assertEqual(self.invoke("whoop_summary"), {"status": "ok", "source": "whoop", "days": 1})
         self.pages = {("/recovery", ""): {"records": [{"score_state": "PENDING_SCORE"}]}}

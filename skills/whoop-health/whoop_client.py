@@ -373,6 +373,7 @@ def summary(state_dir: str, client_id: str, client_secret: str,
         result["recovery"] = {
             "recovery_score": recovery_score,
             "recovery_zone": recovery_zone(recovery_score),
+            "user_calibrating": score.get("user_calibrating"),
             "hrv_rmssd_ms": score.get("hrv_rmssd_milli"),
             "resting_hr": score.get("resting_heart_rate"),
             "spo2_pct": score.get("spo2_percentage"),

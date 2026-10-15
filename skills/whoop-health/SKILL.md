@@ -61,21 +61,22 @@ Access token обновляется автоматически через refres
 | `whoop_summary` | Сводка за последние N дней: recovery, сон, strain. |
 | `whoop_fetch` | Детальные данные по типу: RECOVERY, SLEEP, WORKOUT, CYCLE. |
 
-## Recovery zones
+## Зоны восстановления
 
-`whoop_fetch(RECOVERY)` adds `score.recovery_zone` to scored records;
-`whoop_summary` returns the same derived value as `recovery.recovery_zone`.
-The original `recovery_score` and other measurements are preserved.
-For percentages in 0–100, the classifier uses red ≤33, yellow >33 and ≤66,
-and green >66 (the existing PR's numeric cutoffs, without rounding).
-WHOOP describes the displayed bands as [red 0–33%, yellow 34–66%, green 67–100%](https://developer.whoop.com/docs/whoop-101);
-its [API](https://developer.whoop.com/api) defines the score as a floating-point
-percentage. The fractional convention above is explicit; WHOOP's displayed
-integer bands do not specify rounding between them.
-Missing, non-numeric, non-finite or out-of-range values produce `null`, not an
-assumed color. Unscored records retain their missing/null `score`; summary
-measurements are `null` when their score is unavailable. An empty collection
-still omits its section. These are WHOOP data categories, not medical advice.
+`whoop_fetch(RECOVERY)` добавляет `score.recovery_zone` к записи с оценкой;
+`whoop_summary` возвращает ту же зону в `recovery.recovery_zone`.
+Исходный `recovery_score` и остальные измерения сохраняются.
+Для числового процента 0–100: red ≤33, yellow >33 и ≤66, green >66,
+без округления. [WHOOP](https://developer.whoop.com/docs/whoop-101) описывает
+зоны как 0–33%, 34–66% и 67–100%; [API](https://developer.whoop.com/api)
+задаёт число типа float, но не уточняет округление между целыми границами.
+Поэтому для дробных значений здесь явно указано правило этого навыка.
+Отсутствующее, нечисловое, бесконечное, NaN или выходящее за 0–100 значение
+даёт `null`, а не предполагаемый цвет. Записи без оценки сохраняют отсутствующий
+или null `score`; в сводке такие измерения равны `null`, пустая коллекция
+по-прежнему не добавляет раздел. Флаг `recovery.user_calibrating` в сводке
+сохраняет предупреждение WHOOP о недостаточных данных при калибровке;
+`null` означает, что флаг не получен. Зона — категория данных, не медицинский совет.
 
 ## Данные и права
 
