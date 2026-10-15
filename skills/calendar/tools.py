@@ -237,7 +237,12 @@ def cal_events(ctx: Context, start: str = "", end: str = "", calendars: Any = No
         try:
             master, occ = ops.resolve_occurrence(st, row, occ)
         except ValueError:
-            return json_dumps({"status": "not_found", "message": f"событие {id} не найдено"})
+            if not occ and row.get('master_id') and row.get('sync_state') in ('conflict', 'failed'):
+                # A failed structural command may leave an old occurrence key.
+                # Its stable stored ID still names the comparison the owner needs.
+                master, occ = row, ''
+            else:
+                return json_dumps({"status": "not_found", "message": f"событие {id} не найдено"})
         out = event_public(row, ctx.tz, compact=False)
         if occ:
             occ_dt = parse_stored(occ)

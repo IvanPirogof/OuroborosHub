@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from model import AVAIL_BUSY, PROVIDER_GOOGLE, account_id as make_account_id, calendar_id as make_calendar_id, get_tz, iso_utc, now_utc, own_reminders, parse_stored
 from model import tz_name as zone_name
-from ops import ProviderError
+from ops import ProviderError, created_content_matches
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -347,14 +347,13 @@ class GoogleAdapter:
             _, headers, data = self._request("POST", f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events", params, body)
         except ProviderError as exc:
             if exc.kind == "conflict" or (exc.kind == "http" and exc.status == 409):
-                # id already used: a retry after a lost response — read it back instead of duplicating; a cancelled
-                # leftover (a copy removed earlier, same stable id) is revived with the new content
+                # Read first. The caller binds a conditional revival or checks a
+                # lost-create receipt; this adapter does not overwrite on 409.
                 _, _, data = self._request("GET", f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/{body['id']}")
-                if str(data.get("status") or "") == "cancelled":
-                    revive = {k: v for k, v in body.items() if k != "id"}
-                    _, _, data = self._request("PUT", f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/{body['id']}", params, revive)
-                    return {"external_id": data.get("id", body["id"]), "href": "", "etag": str(data.get("etag") or "")}
-                return {"external_id": data.get("id", body["id"]), "href": "", "etag": str(data.get("etag") or ""), "existed": True}
+                zone = get_tz(event.get('tz') or '')
+                matched = created_content_matches(gevent_to_row(body, calendar['id'], zone), gevent_to_row(data, calendar['id'], zone))
+                return {"external_id": data.get("id", body["id"]), "href": "", "etag": str(data.get("etag") or ""),
+                        "existed": True, 'matches': matched, 'cancelled': str(data.get('status') or '') == 'cancelled'}
             raise
         return {"external_id": str(data.get("id") or body["id"]), "href": "", "etag": str(data.get("etag") or headers.get("etag") or "")}
 
@@ -386,6 +385,18 @@ class GoogleAdapter:
         if not external_id:
             return self.create(calendar, event, payload)
         body = row_to_gevent(event, mute=bool(payload.get("mute_provider_reminders")))
+        changes = payload.get('changes') or {}
+        if (event.get('master_id') and payload.get('scope', 'this') == 'this'
+                and not payload.get('previous_recurrence_id') and 'changes' in payload):
+            names = {'title':'summary', 'description':'description', 'location':'location',
+                     'availability':'transparency', 'attendees':'attendees',
+                     'reminders':'reminders', 'status':'status'}
+            keep = {names[k] for k in changes if k in names}
+            if any(k in changes for k in ('start_utc','end_utc','all_day','tz')):
+                keep.update(('start','end'))
+            if payload.get('mute_provider_reminders'):
+                keep.add('reminders')
+            body = {k:v for k,v in body.items() if k in keep}
         if "attendees" not in (payload.get("changes") or {}):
             # PATCH arrays replace the whole provider array. Unrelated edits must
             # not rewrite guests from a potentially older local projection.
@@ -397,8 +408,11 @@ class GoogleAdapter:
         # Removing the last guest is still an update for which the caller may
         # request notifications. The remaining guest count is not that choice.
         params = {"sendUpdates": "all" if payload.get("send_updates") else "none"}
-        headers = {"If-Match": expected_etag} if expected_etag else {}
-        _, resp_headers, data = self._request("PATCH", f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/{urllib.parse.quote(external_id, safe='')}",
+        if not expected_etag:
+            raise ProviderError('conflict', 'нет закреплённого ETag Google; запись не отправлена')
+        headers = {"If-Match": expected_etag}
+        method = 'PUT' if payload.get('_revive_cancelled') else 'PATCH'
+        _, resp_headers, data = self._request(method, f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/{urllib.parse.quote(external_id, safe='')}",
                                               params, body, headers)
         return {"etag": str(data.get("etag") or resp_headers.get("etag") or ""), "external_id": str(data.get("id") or external_id)}
 
@@ -408,7 +422,9 @@ class GoogleAdapter:
             return
         attendees = json.loads(event.get("attendees_json") or "[]")
         send = "all" if ((payload or {}).get("send_updates") and attendees) else "none"
-        headers = {"If-Match": expected_etag} if expected_etag else {}
+        if not expected_etag:
+            raise ProviderError('conflict', 'нет закреплённого ETag Google; запись не отправлена')
+        headers = {"If-Match": expected_etag}
         self._request("DELETE", f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/{urllib.parse.quote(external_id, safe='')}",
                       {"sendUpdates": send}, None, headers)
 
@@ -434,7 +450,7 @@ class GoogleAdapter:
         if not external_id:
             raise ProviderError("unsupported", "ответить можно только на событие, уже записанное в Google")
         current = self.read_current(calendar, {**event, 'external_id': external_id}, payload)
-        expected = payload.get('_expected_etag') or current['etag']
+        expected = payload.get('_expected_etag') or ''
         if not current['event'] or not expected or current['etag'] != expected:
             raise ProviderError('conflict', 'приглашение изменилось на сервере', 412)
         attendees = json.loads(current['event'].get('attendees_json') or '[]')
@@ -448,7 +464,8 @@ class GoogleAdapter:
         body = {"attendees": [_attendee_to_google(a) for a in attendees if a.get("email")]}
         params = {"sendUpdates": "all" if payload.get("notify_organizer") else "none"}
         _, headers, data = self._request("PATCH", f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/{urllib.parse.quote(external_id, safe='')}", params, body, {'If-Match': expected})
-        return {"etag": str(data.get("etag") or headers.get("etag") or "")}
+        return {"etag": str(data.get("etag") or headers.get("etag") or ""),
+                "external_id": str(data.get('id') or external_id)}
 
     def set_default_reminders(self, calendar: Dict[str, Any], overrides: List[Dict[str, Any]]) -> None:
         """calendarList.patch — the user's own default reminders for this calendar (20 A: silence provider duplicates)."""

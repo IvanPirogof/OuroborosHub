@@ -404,7 +404,7 @@ def _emit_batch(store, channel: NotifyChannel, header: str, batch: List[Tuple[Di
     stats["batched"] += len(batch)
 
 
-_OCCURRENCE_FIELDS = ("title", "description", "location", "end_utc", "visibility")
+_OCCURRENCE_FIELDS = ("title", "description", "location", "end_utc", "visibility", "my_response")
 
 
 def _occurrence_overlay(event: Dict[str, Any], exc: Dict[str, Any]) -> Dict[str, Any]:

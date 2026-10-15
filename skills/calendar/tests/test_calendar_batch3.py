@@ -204,7 +204,7 @@ class Round3FixTests(unittest.TestCase):
         event = {"master_id": "m", "master_href": "https://caldav.yandex.ru/calendars/owner/s1.ics", "recurrence_id": "2026-10-08T00:00:00+00:00",
                  "uid": "s1", "title": "Отпуск", "start_utc": "2026-10-08T00:00:00+00:00", "end_utc": "2026-10-09T00:00:00+00:00", "tz": "UTC",
                  "all_day": 1, "status": "cancelled", "attendees_json": "[]", "reminders_json": "[]"}
-        adapter.update({}, event, "", {})
+        adapter.update({}, event, '"m1"', {})
         written = puts[-1][2]
         self.assertIn("EXDATE;VALUE=DATE:20261008", written)
         with self.assertRaises(ops.ProviderError) as ctx_err:

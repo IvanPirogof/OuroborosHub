@@ -495,7 +495,7 @@ class ProviderIdentityRound2Tests(unittest.TestCase):
             "reminders_json": "[]",
             "attendees_json": "[]",
         }
-        adapter.update({}, event, "", {})
+        adapter.update({}, event, '"m1"', {})
         self.assertEqual(puts[-1][1], event["master_href"])
         self.assertIn("RRULE:FREQ=DAILY", puts[-1][2])
         self.assertIn("EXDATE", puts[-1][2])
@@ -537,7 +537,7 @@ class ProviderIdentityRound2Tests(unittest.TestCase):
         adapter.respond(
             {"external_id": "primary", 'id':'g:primary'},
             event,
-            {"response": "accepted", "notify_organizer": True},
+            {"response": "accepted", "notify_organizer": True, "_expected_etag": '"e1"'},
         )
         method, _path, params, body, _headers = adapter.requests[-1]
         self.assertEqual(_headers, {'If-Match':'"e1"'})

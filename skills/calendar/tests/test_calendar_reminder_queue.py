@@ -118,10 +118,15 @@ class ExplicitNoRemindersTests(unittest.TestCase):
                  "end_utc": "2026-10-01T10:00:00+00:00", "tz": "UTC", "reminders_json": "[]",
                  "attendees_json": "[]"}
         calendar = {"external_id": "primary"}
-        adapter.update(calendar, event, "", {"changes": {"title": "Edited title"}})
+        adapter.update(calendar, event, '"observed"', {"changes": {"title": "Edited title"}})
+        self.assertEqual(adapter.requests[-1][4], {'If-Match': '"observed"'})
         self.assertNotIn("reminders", adapter.requests[-1][3])
-        adapter.update(calendar, event, "", {"changes": {"reminders": "default"}})
+        adapter.update(calendar, event, '"observed"', {"changes": {"reminders": "default"}})
         self.assertIn("reminders", adapter.requests[-1][3])
+        calls = len(adapter.requests)
+        with self.assertRaises(ops.ProviderError):
+            adapter.update(calendar, event, '', {'changes': {'title': 'Must not send'}})
+        self.assertEqual(len(adapter.requests), calls)
 
     def test_empty_update_silences_one_event_and_default_restores_the_rule(self):
         ctx = make_context()

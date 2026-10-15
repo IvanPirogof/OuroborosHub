@@ -521,16 +521,25 @@ class YandexAdapter:
         except ProviderError as exc:
             if exc.kind == "conflict":
                 # A retry after a lost response: the resource already exists — read it back instead of duplicating.
-                _, etag = self.get(href)
-                return {"external_id": uid, "href": href, "etag": etag, "existed": True}
+                observed, etag = self.get(href)
+                from ops import created_content_matches
+                wanted_rows = ics_to_rows(ics, calendar['id'], href, etag, get_tz(event.get('tz') or ''))
+                actual_rows = ics_to_rows(observed, calendar['id'], href, etag, get_tz(event.get('tz') or ''))
+                matched = len(wanted_rows) == len(actual_rows) == 1 and created_content_matches(wanted_rows[0], actual_rows[0])
+                return {"external_id": uid, "href": href, "etag": etag, "existed": True, 'matches': matched}
             raise
-        etag = headers.get("etag", "")
-        if not etag:
-            try:
-                _, etag = self.get(href)
-            except ProviderError:
-                etag = ""
+        etag = self._write_version(href, ics, headers)
         return {"external_id": uid, "href": href, "etag": etag}
+
+    def _write_version(self, href, sent, headers):
+        """A follow-up GET is not the PUT receipt: compare the complete body."""
+        if headers.get('etag'):
+            return headers['etag']
+        try:
+            observed, etag = self.get(href)
+        except ProviderError:
+            return ''
+        return etag if observed == sent else ''
 
     def create(self, calendar: Dict[str, Any], event: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
         return self._create(calendar, event, payload)
@@ -541,6 +550,8 @@ class YandexAdapter:
         href = str(event.get("href") or "")
         if not href:
             return self.create(calendar, event, payload)
+        if not expected_etag:
+            raise ProviderError('conflict', 'нет закреплённого ETag CalDAV; запись не отправлена')
         if event.get("rrule"):
             # a series master shares its resource with the exception VEVENTs written earlier: rewrite the live copy, not our cached one
             try:
@@ -548,27 +559,23 @@ class YandexAdapter:
                 event = {**event, "raw_payload": live_text}
                 if expected_etag and live_etag and expected_etag != live_etag:
                     raise ProviderError("conflict", "серия изменилась на сервере с момента последней синхронизации")
-                expected_etag = live_etag or expected_etag
             except ProviderError as exc:
                 if exc.kind != "not_found":
                     raise
         headers = {"Content-Type": "text/calendar; charset=utf-8"}
         if expected_etag:
             headers["If-Match"] = expected_etag
-        _, resp_headers, _ = self._request("PUT", href, row_to_ics(event, mute_alarms=bool(payload.get("mute_provider_reminders"))), headers)
-        etag = resp_headers.get("etag", "")
-        if not etag:
-            try:
-                _, etag = self.get(href)
-            except ProviderError:
-                etag = ""
-        return {"etag": etag}
+        sent = row_to_ics(event, mute_alarms=bool(payload.get("mute_provider_reminders")))
+        _, resp_headers, _ = self._request("PUT", href, sent, headers)
+        return {"etag": self._write_version(href, sent, resp_headers)}
 
     def delete(self, calendar: Dict[str, Any], event: Dict[str, Any], expected_etag: str, payload: Optional[Dict[str, Any]] = None) -> None:
         href = str(event.get("href") or "")
         if not href:
             return
-        self._request("DELETE", href, None, {"If-Match": expected_etag} if expected_etag else {})
+        if not expected_etag:
+            raise ProviderError('conflict', 'нет закреплённого ETag CalDAV; удаление не отправлено')
+        self._request("DELETE", href, None, {"If-Match": expected_etag})
 
     def read_current(self, calendar, event, payload=None):
         href = event.get('master_href') if event.get('master_id') else event.get('href')
@@ -599,7 +606,7 @@ class YandexAdapter:
         if response not in mapping:
             raise ProviderError("unsupported", "response: accepted | declined | tentative")
         current = self.read_current(calendar, event, payload)
-        expected = payload.get('_expected_etag') or current['etag']
+        expected = payload.get('_expected_etag') or event.get('master_etag') or event.get('etag') or ''
         if not current['event'] or not expected or current['etag'] != expected:
             raise ProviderError('conflict', 'приглашение изменилось на сервере', 412)
         attendees = json.loads(current['event'].get('attendees_json') or '[]')
@@ -622,6 +629,8 @@ class YandexAdapter:
             raise ProviderError("retry", "серия ещё не записана на сервер — исключение подождёт её")
         text, etag = self.get(href)
         cached = str(expected_etag or event.get("master_etag") or "")
+        if not cached or not etag:
+            raise ProviderError('conflict', 'нет закреплённого ETag серии; запись не отправлена')
         if cached and etag and cached != etag:
             raise ProviderError("conflict", "серия изменилась на сервере с момента последней синхронизации")
         icalendar = _ical()
@@ -668,13 +677,8 @@ class YandexAdapter:
             except Exception:
                 pass
         headers = {"Content-Type": "text/calendar; charset=utf-8"}
-        if etag:
-            headers["If-Match"] = etag
-        _, resp_headers, _ = self._request("PUT", href, cal.to_ical().decode("utf-8"), headers)
-        new_etag = resp_headers.get("etag", "")
-        if not new_etag:   # RFC 4791 does not oblige the server to return it on PUT: read it back
-            try:
-                _, new_etag = self.get(href)
-            except ProviderError:
-                new_etag = ""
+        headers["If-Match"] = cached
+        sent = cal.to_ical().decode("utf-8")
+        _, resp_headers, _ = self._request("PUT", href, sent, headers)
+        new_etag = self._write_version(href, sent, resp_headers)
         return {"etag": new_etag, "external_id": str(event.get("uid") or ""), "href": href, "master_etag": new_etag}

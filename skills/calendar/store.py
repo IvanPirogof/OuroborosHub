@@ -12,11 +12,12 @@ import json
 import os
 import shutil
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 from model import (
-    DEFAULT_LOCAL_CALENDAR_ID, DEFAULT_LOCAL_CALENDAR_NAME, INTENT_DONE, INTENT_FAILED, INTENT_PENDING, LOCAL_ACCOUNT_ID, iso_utc, new_id, now_utc,
+    DEFAULT_LOCAL_CALENDAR_ID, DEFAULT_LOCAL_CALENDAR_NAME, INTENT_DONE, INTENT_FAILED, INTENT_PENDING, LOCAL_ACCOUNT_ID, iso_utc, new_id, now_utc, parse_stored,
 )
 
 SCHEMA_VERSION = 1
@@ -89,19 +90,42 @@ class Store:
         os.makedirs(state_dir, exist_ok=True)
         self.state_dir = state_dir
         self.path = os.path.join(state_dir, DB_FILENAME)
+        self._transaction_connection = None
         self._init()
 
     # ── connection / schema ─────────────────────────────────────────
 
-    def _conn(self) -> sqlite3.Connection:
+    @contextmanager
+    def _conn(self):
+        if self._transaction_connection is not None:
+            yield self._transaction_connection
+            return
         conn = sqlite3.connect(self.path, timeout=10, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=5000")
         try:
-            conn.execute("PRAGMA journal_mode=WAL")
-        except sqlite3.DatabaseError:
-            pass
-        return conn
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=5000")
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.DatabaseError:
+                pass
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
+    @contextmanager
+    def transaction(self):
+        """An explicit local-only view: helpers share its connection, not this Store.
+
+        The caller stages a whole command and exits before contacting providers.
+        Other threads/processes using the ordinary Store keep independent connections.
+        """
+        with self._conn() as c:
+            c.execute("BEGIN IMMEDIATE")
+            local = object.__new__(Store)
+            local.state_dir, local.path = self.state_dir, self.path
+            local._transaction_connection = c
+            yield local
 
     def _init(self) -> None:
         with self._conn() as c:
@@ -364,24 +388,120 @@ class Store:
         with self._conn() as c:
             c.execute(f"UPDATE events SET {sets} WHERE id=:id", data)
 
-    def apply_provider_snapshot(self, event_id: str, fields: Dict[str, Any]) -> bool:
-        """A sync observation cannot overwrite a still-unconfirmed owner write.
+    @staticmethod
+    def _unsettled_owner_write(c: sqlite3.Connection, event_id: str, sync_state: str) -> bool:
+        """An accepted owner write the provider has not settled: display state, an open intent, or a failed last intent.
 
-        The intent check and snapshot write share one transaction, including the
-        interval where an older write ACK has set the display state to synced.
+        The one rule a provider observation obeys before it overwrites, retires or deletes a row. Intents are read as
+        well as the state because an older ACK can already have set the display state to ``synced``."""
+        if sync_state in ("pending", "pending_delete", "conflict", "failed"):
+            return True
+        if c.execute("SELECT 1 FROM intents WHERE event_id=? AND state IN ('pending','conflict') LIMIT 1", (event_id,)).fetchone():
+            return True
+        last = c.execute("SELECT state FROM intents WHERE event_id=? ORDER BY rowid DESC LIMIT 1", (event_id,)).fetchone()
+        return bool(last and last[0] == "failed")
+
+    @staticmethod
+    def _series_closed(c: sqlite3.Connection, master_id: str) -> bool:
+        """The series a stored override belongs to is gone, deleted, or being deleted by the owner."""
+        master = c.execute("SELECT sync_state, deleted_at FROM events WHERE id=?", (master_id,)).fetchone()
+        if master is None or master["deleted_at"] or master["sync_state"] == "pending_delete":
+            return True
+        latest = c.execute("SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1",
+                           (master_id,)).fetchone()
+        return latest is not None and latest["kind"] == "delete"
+
+    def sync_basis(self, calendar_id):
+        """Local rows before the network read; a late feed cannot undo a newer ACK."""
+        with self._conn() as c:
+            return {r['id']: dict(r) for r in c.execute('SELECT * FROM events WHERE calendar_id=? OR '
+                    "(link_group_id!='' AND link_group_id IN (SELECT link_group_id FROM events WHERE calendar_id=?))",
+                    (calendar_id, calendar_id))}
+
+    @staticmethod
+    def _same_observation(row, observed):
+        return observed is None or bool(row) and all(row[k] == value for k, value in observed.items() if k in EVENT_COLUMNS)
+
+    def insert_provider_master(self, payload):
+        with self.transaction() as tx:
+            if tx.find_by_external(payload['calendar_id'], payload.get('external_id') or '', payload.get('href') or '', payload.get('uid') or ''):
+                return None
+            return tx.insert_event(payload)
+
+    def apply_provider_snapshot(self, event_id: str, fields: Dict[str, Any], observed=None) -> bool:
+        """A sync observation cannot overwrite a still-unconfirmed owner write, nor re-attach an override to a closed series.
+
+        The checks and the snapshot write share one transaction, including the interval where an older write ACK
+        has set the display state to synced.
         """
         data = {k: v for k, v in fields.items() if k in EVENT_COLUMNS and k != "id"}
         with self._conn() as c:
             c.execute("BEGIN IMMEDIATE")
-            row = c.execute("SELECT sync_state FROM events WHERE id=?", (event_id,)).fetchone()
-            active = c.execute("SELECT 1 FROM intents WHERE event_id=? AND state IN ('pending','conflict') LIMIT 1", (event_id,)).fetchone()
-            last = c.execute("SELECT state FROM intents WHERE event_id=? ORDER BY rowid DESC LIMIT 1", (event_id,)).fetchone()
-            if row is None or row[0] in ("pending", "pending_delete", "conflict", "failed") or active or (last and last[0] == "failed"):
+            row = c.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+            if row is None or not self._same_observation(row, observed) or self._unsettled_owner_write(c, event_id, row["sync_state"]):
+                return False
+            if row["master_id"] and self._series_closed(c, row["master_id"]):
                 return False
             data.update(updated_at=_ts(), deleted_at=None)
             sets = ", ".join(f"{key}=?" for key in data)
             c.execute(f"UPDATE events SET {sets} WHERE id=?", (*data.values(), event_id))
         return True
+
+    def provider_absence_blocker(self, event_id: str, observed: Optional[Dict[str, Any]] = None) -> str:
+        """Why a provider-side absence may not remove this row *now*; '' means it may.
+
+        Reads the row and its stored overrides on this view's connection: call it in the transaction that removes the
+        row. ``observed`` binds the provider's answer to the identity it was about."""
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+            if row is None or row["deleted_at"]:
+                return "gone"
+            if not self._same_observation(row, observed):
+                return "rebound"
+            family = [(event_id, row["sync_state"])] + [
+                (r["id"], r["sync_state"]) for r in c.execute("SELECT id, sync_state FROM events WHERE master_id=? AND deleted_at IS NULL", (event_id,))]
+            if any(self._unsettled_owner_write(c, eid, state) for eid, state in family):
+                return "unsettled"
+        return ""
+
+    def retire_provider_absent(self, event_id: str, observed: Optional[Dict[str, Any]] = None) -> bool:
+        """Provider confirmed this resource gone: soft-delete the row and its overrides unless an owner write is unsettled."""
+        with self.transaction() as tx:
+            if tx.provider_absence_blocker(event_id, observed):
+                return False
+            ts = _ts()
+            with tx._conn() as c:
+                c.execute("UPDATE events SET deleted_at=?, updated_at=? WHERE (id=? OR master_id=?) AND deleted_at IS NULL",
+                          (ts, ts, event_id, event_id))
+        return True
+
+    def retire_synced_exception(self, exception_id: str, observed=None) -> bool:
+        """Retire a provider-derived override the server no longer lists, only while it is still exactly what the provider gave us."""
+        with self.transaction() as tx:
+            with tx._conn() as c:
+                row = c.execute("SELECT * FROM events WHERE id=? AND deleted_at IS NULL", (exception_id,)).fetchone()
+                if (row is None or not row["master_id"] or not self._same_observation(row, observed)
+                        or self._unsettled_owner_write(c, exception_id, row["sync_state"])):
+                    return False
+                ts = _ts()
+                c.execute("UPDATE events SET deleted_at=?, updated_at=? WHERE id=?", (ts, ts, exception_id))
+        return True
+
+    def insert_provider_exception(self, master_id: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Import one provider override exactly once, only into an open series; None when the slot is taken or the series closed.
+
+        The one-row-per-slot and series-open checks run in the transaction that inserts, so an owner command or another
+        pass that committed first wins instead of leaving a twin or an orphan."""
+        slot = str(payload.get("recurrence_id") or "")
+        with self.transaction() as tx:
+            with tx._conn() as c:
+                master = c.execute('SELECT sync_state FROM events WHERE id=?', (master_id,)).fetchone()
+                if (not slot or master is None or self._unsettled_owner_write(c, master_id, master['sync_state'])
+                        or self._series_closed(c, master_id)
+                        or c.execute("SELECT 1 FROM events WHERE master_id=? AND recurrence_id=? AND deleted_at IS NULL LIMIT 1",
+                                     (master_id, slot)).fetchone()):
+                    return None
+            return tx.insert_event({**payload, "master_id": master_id})
 
     def advance_resource_etag(self, master_id: str, previous: str, current: str) -> None:
         """Carry known conditional CalDAV writes to queued sibling resource writes.
@@ -431,8 +551,9 @@ class Store:
             latest = c.execute("SELECT id, kind, state FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1",
                                (event_id,)).fetchone()
             if latest is not None and latest["kind"] == "delete" and latest["state"] == "conflict":
-                c.execute("UPDATE intents SET state=?, result_json=?, lease_until=NULL, lease_owner='', next_attempt_at=?, updated_at=? WHERE id=?",
-                          (INTENT_PENDING, json.dumps({"note": "provider identity found by sync"}), _ts(), _ts(), latest["id"]))
+                c.execute("UPDATE intents SET state=?, result_json=?, lease_until=NULL, lease_owner='', next_attempt_at=?, updated_at=?,"
+                          " expected_etag=CASE WHEN expected_etag='' THEN ? ELSE expected_etag END WHERE id=?",
+                          (INTENT_PENDING, json.dumps({"note": "provider identity found by sync"}), _ts(), _ts(), identity.get('etag') or '', latest["id"]))
         return True
 
     def get_event(self, event_id: str) -> Optional[Dict[str, Any]]:
@@ -449,10 +570,13 @@ class Store:
                 cur = c.execute("UPDATE events SET deleted_at=?, updated_at=? WHERE id=? AND deleted_at IS NULL", (_ts(), _ts(), event_id))
         return cur.rowcount > 0
 
-    def confirm_pending_delete(self, event_id: str) -> bool:
+    def confirm_pending_delete(self, event_id: str, observed=None) -> bool:
         """Provider absence closes only the selected row and its pending delete intent, atomically."""
         with self._conn() as c:
             c.execute("BEGIN IMMEDIATE")
+            row = c.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone()
+            if row is None or not self._same_observation(row, observed):
+                return False
             removed = c.execute("DELETE FROM events WHERE id=? AND"
                                 " (sync_state='pending_delete' OR (sync_state='conflict' AND"
                                 " (SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1)='delete'))"
@@ -537,10 +661,76 @@ class Store:
 
     # ── intents (durable external operations) ───────────────────────
 
+    def get_intent(self, intent_id: str) -> Optional[Dict[str, Any]]:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM intents WHERE id=?", (intent_id,)).fetchone()
+        return dict(row) if row else None
+
+    def current_leased_intent(self, leased):
+        row = self.get_intent(leased['id'])
+        if row is None or row['state'] != INTENT_PENDING:
+            return None
+        if any(row[k] != leased[k] for k in ('lease_owner', 'lease_until', 'attempts')):
+            return None
+        expiry = parse_stored(row['lease_until'])
+        return row if expiry and expiry > now_utc() else None
+
+    def pin_provider_version(self, leased, external_id, etag):
+        """Bind an unversioned intent before its first write; reads perform no rebase."""
+        if not external_id or not etag:
+            raise ValueError('provider version needs identity and ETag')
+        with self.transaction() as local:
+            row = local.current_leased_intent(leased)
+            if row is None or row['expected_etag']:
+                return row
+            payload = json.loads(row['payload_json'])
+            payload['_provider_external_id'] = external_id
+            row.update(expected_etag=etag, payload_json=json.dumps(payload, ensure_ascii=False))
+            with local._conn() as c:
+                c.execute('UPDATE intents SET expected_etag=?,payload_json=? WHERE id=?',
+                          (etag, row['payload_json'], row['id']))
+            return row
+
+    def acknowledge_write(self, intent, event, result, expected, shared_resource=False):
+        """Commit identity, matching successor versions and DONE from one own ACK."""
+        with self.transaction() as local:
+            current = local.get_intent(intent['id'])
+            if current is None or current['state'] != INTENT_PENDING or any(
+                    current[k] != intent[k] for k in ('lease_owner', 'lease_until', 'attempts')):
+                return False
+            etag = result.get('master_etag') or result.get('etag') or ''
+            payload = json.loads(current['payload_json'])
+            resource_id = payload.get('resource_id') or ((event.get('master_id') or event['id']) if shared_resource else event['id'])
+            with local._conn() as c:
+                if etag:
+                    # A queued write may predate this ACK, and its row may have
+                    # moved to another segment. Match the staged resource, not
+                    # wall time or today's parent relationship.
+                    c.execute("UPDATE intents SET expected_etag=? WHERE state='pending' AND id!=? "
+                              "AND calendar_id=? AND expected_etag=? AND "
+                              "COALESCE(json_extract(payload_json,'$.resource_id'),event_id)=?",
+                              (etag, intent['id'], intent['calendar_id'], expected, resource_id))
+                    c.execute('UPDATE events SET etag=? WHERE id=?', (etag, resource_id))
+                fields = {k: result[k] for k in ('external_id','href','etag') if result.get(k)}
+                fields['sync_state'] = 'synced'
+                local.update_event(event['id'], fields)
+                local.settle_intent(intent['id'], INTENT_DONE, {'ok': True, 'etag': etag})
+                waiting = c.execute("SELECT kind FROM intents WHERE event_id=? AND state IN ('pending','conflict') ORDER BY rowid DESC LIMIT 1",
+                                    (event['id'],)).fetchone()
+                if waiting:
+                    local.update_event(event['id'], {'sync_state': 'pending_delete' if waiting[0]=='delete' else 'pending'})
+        return True
+
     def add_intent(self, kind: str, account_id: str, calendar_id: str, event_id: str, payload: Dict[str, Any],
                    scope: str = "this", expected_etag: str = "", op_id: str = "") -> Dict[str, Any]:
         ts = now_utc().isoformat(timespec="microseconds")   # intents of one call must order strictly (dependents wait for earlier writes)
         payload = {**(payload or {}), **({"op_id": op_id} if op_id else {})}   # one owner command = one op: its parts share the fate
+        payload['desired'] = {k: v for k, v in (self.get_event(event_id) or {}).items()
+                              if k in EVENT_COLUMNS and k != 'raw_payload'}
+        event = payload['desired'] or {}
+        calendar = self.get_calendar(calendar_id) or {}
+        payload['resource_id'] = ((event.get('master_id') or event_id)
+                                  if calendar.get('provider') == 'yandex' else event_id)
         row = {"id": new_id("int"), "kind": kind, "account_id": account_id, "calendar_id": calendar_id, "event_id": event_id,
                "scope": scope, "payload_json": json.dumps(payload, ensure_ascii=False, default=str), "expected_etag": expected_etag or "",
                "state": INTENT_PENDING, "attempts": 0, "next_attempt_at": ts, "lease_until": None, "lease_owner": "",
@@ -596,7 +786,7 @@ class Store:
 
     def intents_for_event(self, event_id: str) -> List[Dict[str, Any]]:
         with self._conn() as c:
-            rows = c.execute("SELECT * FROM intents WHERE event_id=? ORDER BY created_at", (event_id,)).fetchall()
+            rows = c.execute("SELECT * FROM intents WHERE event_id=? ORDER BY rowid", (event_id,)).fetchall()
         return [dict(r) for r in rows]
 
     def delete_requested(self, event_id: str) -> bool:

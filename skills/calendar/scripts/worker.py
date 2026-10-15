@@ -27,7 +27,7 @@ if PAYLOAD not in sys.path:
 
 import ops  # noqa: E402
 import reminders as rem  # noqa: E402
-from model import INTENT_CONFLICT, INTENT_PENDING, PROVIDER_GOOGLE, PROVIDER_YANDEX, SECRET_KEYS, get_tz, iso_utc, now_utc, own_reminders, parse_stored  # noqa: E402
+from model import PROVIDER_GOOGLE, PROVIDER_YANDEX, SCOPE_ALL, SECRET_KEYS, get_tz, iso_utc, now_utc, own_reminders, parse_stored  # noqa: E402
 from providers import Providers  # noqa: E402
 from store import Store  # noqa: E402
 
@@ -134,7 +134,9 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
     Returns (upserts, deletions, propagations, next_cursor, cursor_kind). For Google the cancelled ids in an
     incremental feed ARE the confirmed deletions; for CalDAV a window read plus HEAD 404 on the known href is.
     """
+    basis = store.sync_basis(cal['id'])
     rows, next_cursor, kind, extra = adapter.fetch(cal, cursor, tz=tz)
+    protected_masters = set()
     incremental = bool(cursor) and kind == "google_sync_token"
     upserts = deleted = propagated = 0
     masters: Dict[str, str] = {}
@@ -154,12 +156,15 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
         if row.get("status") == "cancelled":
             if existing is not None:
                 if existing.get("sync_state") == "pending_delete" or store.delete_requested(existing["id"]):
-                    deleted += int(store.confirm_pending_delete(existing["id"]))  # settle only the selected copy and its intent
+                    deleted += int(store.confirm_pending_delete(existing["id"], basis[existing['id']])) if existing['id'] in basis else 0
                 elif existing.get("sync_state") not in ("pending", "conflict", "failed"):
-                    deleted += _confirmed_deletion(store, providers, existing)
+                    deleted += _confirmed_deletion(store, providers, existing, basis.get(existing['id']), basis) if existing['id'] in basis else 0
             continue
         if existing is None:
-            saved = store.insert_event({k: v for k, v in row.items() if k != "master_external_id"})
+            saved = store.insert_provider_master({k: v for k, v in row.items() if k != "master_external_id"})
+            if saved is None:
+                next_cursor = ''
+                continue
             masters[row["uid"]] = saved["id"]
             upserts += 1
             continue
@@ -167,13 +172,17 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
         if existing.get("etag") == row["etag"] and existing.get("sync_state") == "synced" and not existing.get("deleted_at"):
             continue
         if existing.get("sync_state") in ("pending", "conflict", "pending_delete", "failed"):
+            protected_masters.add(existing['id'])
+            next_cursor = ''
             continue  # our write is in flight; the intent path settles it
         changes = {k: row[k] for k in ("title", "description", "location", "start_utc", "end_utc", "tz", "all_day", "rrule", "exdates", "rdates",
                                         "status", "organizer", "attendees_json", "my_response", "etag", "raw_payload") if k in row}
         if existing.get("origin") == "external":
             changes["reminders_json"] = _imported_reminders(existing, row["reminders_json"], cal["provider"], bool((store.get_setting(rem.MODE_KEY) or {}).get(cal["id"])))
             changes["availability"] = row.get("availability") or existing.get("availability")
-        if not store.apply_provider_snapshot(existing["id"], {**changes, "sync_state": "synced"}):
+        if existing['id'] not in basis or not store.apply_provider_snapshot(existing["id"], {**changes, "sync_state": "synced"}, observed=basis[existing['id']]):
+            protected_masters.add(existing['id'])
+            next_cursor = ''
             continue
         upserts += 1
         if kind != "google_sync_token" and row.get("rrule"):
@@ -183,8 +192,7 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
             for sib in store.group_masters(existing["link_group_id"]):
                 if sib["id"] == existing["id"]:
                     continue
-                ops.update_event(store, providers, sib["id"], moved, scope="all", owner="companion", propagate=False)
-                propagated += 1
+                propagated += _sync_copy(store, providers, basis, sib['id'], 'update', sib['id'], moved, 'all')
         if existing.get("link_group_id") and (existing.get("rrule") != row.get("rrule") or existing.get("title") != row.get("title")):
             # A source calendar changing recurrence or title must update the
             # linked copies even when DTSTART is unchanged. Busy copies retain
@@ -198,8 +206,7 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
                 if existing.get("title") != row.get("title") and sib.get("publish_mode") != "busy":
                     delta["title"] = row.get("title") or ""
                 if delta:
-                    result = ops.update_event(store, providers, sib["id"], delta, scope="all", owner="companion", propagate=False)
-                    propagated += int(result.get("status") == "ok")
+                    propagated += _sync_copy(store, providers, basis, sib['id'], 'update', sib['id'], delta, 'all')
         if existing.get("link_group_id") and row.get("rrule"):
             # a date cancelled on the server as EXDATE (CalDAV style) is a cancelled occurrence for the copies too
             new_ex = set(x for x in str(row.get("exdates") or "").split(",") if x) - set(x for x in str(existing.get("exdates") or "").split(",") if x)
@@ -207,8 +214,7 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
                 for sib in store.group_masters(existing["link_group_id"]):
                     if sib["id"] == existing["id"]:
                         continue
-                    ops.delete_event(store, providers, f"{sib['id']}@{key}", scope="this", owner="companion", cascade=False)
-                    propagated += 1
+                    propagated += _sync_copy(store, providers, basis, sib['id'], 'delete', f"{sib['id']}@{key}", {}, 'this')
     for row in rows:
         if not row.get("recurrence_id"):
             continue
@@ -218,13 +224,17 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
             master_id = master["id"] if master else ""
         if not master_id:
             continue
+        if master_id in protected_masters:
+            continue
         exc = next((e for e in store.exceptions_for(master_id) if e.get("recurrence_id") == row["recurrence_id"]), None)
         payload = {k: v for k, v in row.items() if k != "master_external_id"}
         payload.update({"master_id": master_id, "raw_payload": ""})
         changed = exc is None or exc.get("etag") != row["etag"]
         materially = exc is None or any(str(exc.get(k) or "") != str(row.get(k) or "") for k in ("start_utc", "end_utc", "status"))
         if exc is None:
-            store.insert_event(payload)
+            if store.insert_provider_exception(master_id, payload) is None:
+                next_cursor = ''
+                continue   # the slot was taken by an owner write, or the series closed, since we looked: the next pass decides
         elif changed:
             if exc.get("sync_state") in ("pending", "conflict", "pending_delete", "failed"):
                 continue   # our own write to this occurrence is in flight
@@ -232,7 +242,8 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
                                               "attendees_json", "my_response") if k in payload}
             if exc.get("origin") == "external":
                 fields["reminders_json"] = _imported_reminders(exc, payload.get("reminders_json") or "[]", cal["provider"], bool((store.get_setting(rem.MODE_KEY) or {}).get(cal["id"])))
-            if not store.apply_provider_snapshot(exc["id"], fields):
+            if exc['id'] not in basis or not store.apply_provider_snapshot(exc["id"], fields, observed=basis[exc['id']]):
+                next_cursor = ''
                 continue
         upserts += 1
         if changed and materially:   # a mere resource etag bump (any PUT of the series) is not a change of this occurrence
@@ -244,27 +255,23 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
                     if sib["id"] == master_id:
                         continue
                     if str(row.get("status") or "") == "cancelled":
-                        ops.delete_event(store, providers, f"{sib['id']}@{key}", scope="this", owner="companion", cascade=False)
+                        propagated += _sync_copy(store, providers, basis, sib['id'], 'delete', f"{sib['id']}@{key}", {}, 'this')
                     else:
                         moved = {"start_utc": row["start_utc"], "end_utc": row["end_utc"], "all_day": row.get("all_day")}
-                        ops.update_event(store, providers, f"{sib['id']}@{key}", moved, scope="this", owner="companion", propagate=False)
-                    propagated += 1
+                        propagated += _sync_copy(store, providers, basis, sib['id'], 'update', f"{sib['id']}@{key}", moved, 'this')
     for master_id, uid in refreshed.items():
         # A CalDAV series is one resource read whole: an override VEVENT the server no longer holds (its date
         # cancelled by EXDATE, or the move undone) is not a local exception any more. Our own unsent writes stay.
         present = {r["recurrence_id"] for r in rows if r.get("recurrence_id") and r.get("uid") == uid}
         for exc in store.exceptions_for(master_id):
-            if exc.get("recurrence_id") in present or exc.get("sync_state") != "synced":
-                continue
-            if any(i["state"] in (INTENT_PENDING, INTENT_CONFLICT) for i in store.intents_for_event(exc["id"])):
-                continue
-            store.delete_event(exc["id"])
+            if exc.get("recurrence_id") not in present and exc['id'] in basis:
+                store.retire_synced_exception(exc["id"], observed=basis[exc['id']])
     if kind == "google_sync_token":
         # Google: cancelled ids in the (incremental) feed are the confirmed deletions (roast Fable F7).
         for ext_id in extra:
             existing = store.find_by_external(cal["id"], external_id=ext_id)
             if existing is not None and not existing.get("deleted_at") and (existing.get("sync_state") not in ("pending", "conflict") or store.delete_requested(existing["id"])):
-                deleted += _confirmed_deletion(store, providers, existing)
+                deleted += _confirmed_deletion(store, providers, existing, basis.get(existing['id']), basis) if existing['id'] in basis else 0
     if not incremental and kind == "google_sync_token":
         # The initial feed is time-bounded: absence alone is not a deletion.
         seen = {r.get("external_id") for r in rows} | set(extra)
@@ -278,7 +285,7 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
                     continue
             except ops.ProviderError:
                 continue
-            deleted += _confirmed_deletion(store, providers, local)
+            deleted += _confirmed_deletion(store, providers, local, basis.get(local['id']), basis) if local['id'] in basis else 0
     if not incremental and kind != "google_sync_token":
         # CalDAV window: rows inside the window whose resource is gone from the server.
         seen_hrefs = set(extra)
@@ -293,7 +300,7 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
                 continue  # an access problem is not a deletion
             if still_there:
                 continue
-            deleted += _confirmed_deletion(store, providers, local)
+            deleted += _confirmed_deletion(store, providers, local, basis.get(local['id']), basis) if local['id'] in basis else 0
     return upserts, deleted, propagated, next_cursor, kind
 
 
@@ -333,18 +340,64 @@ def _imported_reminders(local: Dict[str, Any], incoming: str, provider: str, mod
     return incoming
 
 
-def _confirmed_deletion(store: Store, providers: Providers, local: Dict[str, Any]) -> int:
+def _copy_unchanged(view, event_id, basis):
+    rows = [view.get_event(event_id)] + view.exceptions_for(event_id)
+    with view._conn() as c:
+        for row in rows:
+            before = basis.get(row['id']) if row else None
+            if before is None or view._unsettled_owner_write(c, row['id'], row['sync_state']):
+                return False
+            # Own ACK bookkeeping can change between propagation parts; a
+            # different owner edit must still win over the old observation.
+            semantic = {k:v for k,v in before.items() if k not in ('etag','updated_at','sync_state','raw_payload')}
+            if not view._same_observation(row, semantic):
+                return False
+    return True
+
+
+def _stage_sync_copy(view, basis, root, kind, address, changes, scope):
+    if not _copy_unchanged(view, root, basis):
+        return {'status': 'protected', 'assignments': []}
+    result = (ops._stage_update_event(view, address, changes, scope=scope, propagate=False)
+              if kind == 'update' else ops._stage_delete_event(view, address, scope=scope, cascade=False))
+    for row in [view.get_event(root)] + view.exceptions_for(root):
+        if row:
+            basis[row['id']] = row
+    return result
+
+
+def _sync_copy(store, providers, basis, root, kind, address, changes, scope):
+    result = ops._finish_command(store, providers, _stage_sync_copy, 'companion',
+                                 basis, root, kind, address, changes, scope)
+    return int(result.get('status') == 'ok')
+
+
+def _confirmed_deletion(store: Store, providers: Providers, local: Dict[str, Any], observed=None, basis=None) -> int:
+    """The provider answered that this resource is gone; apply it only if no accepted owner write says otherwise *now*.
+
+    ``local`` is the caller's earlier snapshot: it names the row and the identity the answer was about, nothing more.
+    The provider call already happened outside SQLite; every protection check is repeated inside the write transaction."""
     if local.get("sync_state") == "pending_delete" or store.delete_requested(local["id"]):
         # This row was selected for deletion by an earlier scoped operation.
         # Its siblings already have their own intents if the owner requested a cascade.
-        return int(store.confirm_pending_delete(local["id"]))
-    if local.get("link_group_id"):
-        ops.delete_event(store, providers, local["id"], scope="all", owner="companion")
-    else:
-        for exc in store.exceptions_for(local["id"]):
-            store.delete_event(exc["id"])
-        store.delete_event(local["id"])
-    return 1
+        return int(store.confirm_pending_delete(local["id"], observed))
+    observed = observed if observed is not None else local
+    if not local.get("link_group_id"):
+        return int(store.retire_provider_absent(local["id"], observed))
+    basis = basis if basis is not None else store.sync_basis(local['calendar_id'])
+    staged = ops._finish_command(store, providers, _stage_absent_cascade, "companion", local["id"], observed, basis)
+    return int(staged.get("status") == "ok")
+
+
+def _stage_absent_cascade(view, event_id: str, observed: Dict[str, Any], basis) -> Dict[str, Any]:
+    """Runs inside ops._finish_command's write transaction: the guard and the linked-copy cascade commit together or not at all."""
+    if view.provider_absence_blocker(event_id, observed):
+        return {"status": "protected", "assignments": []}
+    row = view.get_event(event_id)
+    if any(not _copy_unchanged(view, sibling['id'], basis)
+           for sibling in view.group_masters(row['link_group_id']) if sibling['id'] != event_id):
+        return {'status': 'protected', 'assignments': []}
+    return ops._stage_delete_event(view, event_id, scope=SCOPE_ALL)
 
 
 # ── main loop ───────────────────────────────────────────────────────

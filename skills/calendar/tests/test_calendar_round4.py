@@ -458,7 +458,7 @@ class YandexRound4Tests(unittest.TestCase):
             "attendees_json": "[]",
             "reminders_json": "[]",
         }
-        adapter.update({}, event, "", {})
+        adapter.update({}, event, '"d1"', {})
         self.assertIn("EXDATE;VALUE=DATE:20261008", puts[0][2])
         with self.assertRaises(ops.ProviderError) as caught:
             adapter.update({}, {**event, "master_href": ""}, "", {})

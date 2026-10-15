@@ -318,11 +318,50 @@ def free_windows(hard: List[Tuple[datetime, datetime]], start: datetime, end: da
 
 # ── create / update / delete ────────────────────────────────────────
 
-def create_event(store, providers, spec: Dict[str, Any], owner: str = "") -> Dict[str, Any]:
+def _finish_command(store, providers, stage, owner, *args, **kwargs):
+    """Commit all desired rows and intents before attempting provider I/O."""
+    with store.transaction() as local:
+        result = stage(local, *args, **kwargs)
+    assignments = list(result.get("assignments", [])) + list(result.get("added", []))
+    for removed in result.get("removed", []):
+        assignments.extend(removed.get("assignments", []))
+    for assignment in assignments:
+        ids = assignment.pop("_intent_ids", [])
+        if not ids:
+            continue
+        outcome = {"status": INTENT_DONE}
+        for intent_id in ids:
+            reply = execute_intent(store, providers, store.get_intent(intent_id), owner or lease_owner())
+            if outcome["status"] == INTENT_DONE:
+                outcome = reply
+        assignment.update(outcome)
+    if result.get("event"):
+        result["event"] = store.get_event(result["event"]["id"]) or result["event"]
+    return result
+
+
+def create_event(store, providers, spec, owner=""):
+    return _finish_command(store, providers, _stage_create_event, owner, spec)
+
+
+def update_event(store, providers, event_id, changes, scope=SCOPE_THIS, owner="", propagate=True, send_updates=False):
+    return _finish_command(store, providers, _stage_update_event, owner, event_id, changes,
+                           scope=scope, propagate=propagate, send_updates=send_updates)
+
+
+def delete_event(store, providers, event_id, scope=SCOPE_THIS, owner="", send_updates=False, cascade=True):
+    return _finish_command(store, providers, _stage_delete_event, owner, event_id,
+                           scope=scope, send_updates=send_updates, cascade=cascade)
+
+
+def reassign_event(store, providers, row, calendar_ids, owner=""):
+    return _finish_command(store, providers, _stage_reassign_event, owner, row, calendar_ids)
+
+
+def _stage_create_event(store, spec: Dict[str, Any], owner: str = "") -> Dict[str, Any]:
     """``spec``: title, start_utc, end_utc, tz, all_day, calendar_ids (ordered, first = primary — full content;
     the rest follow each calendar's ``publish_mode``, default busy), visibility, availability, description,
     location, attendees, reminders (offsets, minutes), rrule. Returns event + per-calendar assignments."""
-    owner = owner or lease_owner()
     calendar_ids: List[str] = [c for c in spec.get("calendar_ids") or [] if c]
     if not calendar_ids:
         calendar_ids = [store.default_calendar()["id"]]
@@ -360,12 +399,13 @@ def create_event(store, providers, spec: Dict[str, Any], owner: str = "") -> Dic
             assignments.append({"calendar_id": cal_id, "calendar_name": cal["name"], "event_id": saved["id"], "status": INTENT_DONE})
             continue
         intent = store.add_intent("create", cal["account_id"], cal_id, saved["id"], {"send_updates": bool(spec.get("send_invites")) and not is_copy}, op_id=op_id)
-        result = execute_intent(store, providers, intent, owner)
+        result = {"status": INTENT_PENDING, "_intent_ids": [intent["id"]]}
         assignments.append({"calendar_id": cal_id, "calendar_name": cal["name"], "event_id": saved["id"], **result})
     return {"event": primary_row, "assignments": assignments, "link_group_id": link_group}
 
 
-def update_event(store, providers, event_id: str, changes: Dict[str, Any], scope: str = SCOPE_THIS, owner: str = "",
+
+def _stage_update_event(store, event_id: str, changes: Dict[str, Any], scope: str = SCOPE_THIS,
                  propagate: bool = True, send_updates: bool = False) -> Dict[str, Any]:
     """Apply ``changes`` to an event, an occurrence, a whole series or «from this date on».
 
@@ -374,7 +414,6 @@ def update_event(store, providers, event_id: str, changes: Dict[str, Any], scope
     """
     if scope not in SCOPES:
         raise ValueError("scope: this | following | all")
-    owner = owner or lease_owner()
     base_id, occ_key = _series_id(event_id)
     row = store.get_event(base_id)
     if row is None or row.get("deleted_at"):
@@ -399,6 +438,16 @@ def update_event(store, providers, event_id: str, changes: Dict[str, Any], scope
     blocked = _read_only_preflight(store, members, assignments)   # refuse read-only targets BEFORE touching local rows
     if row["id"] in blocked:
         return {"status": "failed", "event": row, "assignments": assignments}
+    before = {e['id']: e for master in members for e in [master] + store.exceptions_for(master['id'])}
+    roots = {master['calendar_id']: master['id'] for master in members}
+    # Moving topology must follow accepted writes still addressed to the old
+    # resource. Their desired snapshots remain valid until they acknowledge.
+    structural = scope == SCOPE_FOLLOWING or bool(_series_delta(row, changes))
+    prior_by_calendar = {}
+    if structural:
+        for eid, old in before.items():
+            prior_by_calendar.setdefault(old['calendar_id'], []).extend(
+                i['id'] for i in store.intents_for_event(eid) if i['state'] == INTENT_PENDING)
     targets: List[Dict[str, Any]] = []
     if occ_key and scope == SCOPE_THIS:
         exc_id = _ensure_exception(store, row, occ_key, changes)
@@ -435,6 +484,7 @@ def update_event(store, providers, event_id: str, changes: Dict[str, Any], scope
                 if sib_delta:
                     targets.extend(_shift_series_rows(store, sib, sib_delta))
     rsvp_only = set(changes.keys()) == {"my_response"}
+    previous_by_calendar = {}
     for target in targets:
         if target is None:
             continue
@@ -444,6 +494,10 @@ def update_event(store, providers, event_id: str, changes: Dict[str, Any], scope
             continue
         store.update_event(target["id"], {"sync_state": "pending"})
         write_kind = "create" if (not target.get("external_id") and not target.get("href") and not target.get("master_id")) else "update"
+        birth = next((i for i in store.intents_for_event(target['id'])
+                      if i['kind'] == 'create' and i['state'] in (INTENT_PENDING, INTENT_FAILED, INTENT_CONFLICT)), None)
+        if birth:
+            write_kind = 'update'
         kinds: List[str] = []
         if "my_response" in changes and target["calendar_id"] == row["calendar_id"]:
             if not rsvp_only:
@@ -451,19 +505,38 @@ def update_event(store, providers, event_id: str, changes: Dict[str, Any], scope
             kinds.append("rsvp")             # …then the answer, as its own provider call (it waits while the write is pending)
         else:
             kinds.append(write_kind)
-        result: Dict[str, Any] = {"status": INTENT_DONE}
+        result: Dict[str, Any] = {"status": INTENT_PENDING, "_intent_ids": []}
         for kind in kinds:
             payload = {"scope": scope, "changes": {k: v for k, v in changes.items() if k != "my_response"}, "send_updates": bool(send_updates)}
+            payload['family_root_id'] = roots[cal['id']]
+            previous = previous_by_calendar.get(cal['id'])
+            if previous:
+                payload['after_intent_id'] = previous
+            else:
+                if prior_by_calendar.get(cal['id']):
+                    payload['prior_intent_ids'] = prior_by_calendar[cal['id']]
+                if birth:
+                    payload['after_intent_id'] = birth['id']
+                affected = [t['id'] for t in targets if t and t['calendar_id'] == cal['id']]
+                payload['restore_rows'] = [{k: v for k, v in before[eid].items() if k not in ('raw_payload','provider','account_id','calendar_name')}
+                                           for eid in affected if eid in before]
+                payload['created_ids'] = [eid for eid in affected if eid not in before]
             if target.get("_previous_recurrence_id"):
                 payload["previous_recurrence_id"] = target["_previous_recurrence_id"]
             if kind == "rsvp":
                 payload.update({"response": changes.get("my_response"), "notify_organizer": bool(send_updates)})
             current = store.get_event(target["id"]) or target
-            resource = store.get_event(current['master_id']) if current.get('master_id') and cal['provider'] == 'yandex' else current
-            intent = store.add_intent(kind, cal["account_id"], cal["id"], target["id"], payload, scope=scope, expected_etag=(resource or current).get("etag") or "", op_id=op_id)
-            outcome = execute_intent(store, providers, intent, owner)
-            if result.get("status") == INTENT_DONE:
-                result = outcome     # the first non-done outcome is the one worth reporting
+            old_target = before.get(target['id'])
+            if old_target and old_target.get('master_id') and old_target['master_id'] != current.get('master_id'):
+                payload['relocated_from_master'] = old_target['master_id']
+            if kind != 'create' and not _write_etag(store, cal, current):
+                payload['baseline'] = _baseline_before(before, target)
+                if payload.get('relocated_from_master'):
+                    parent = store.get_event(current['master_id'])
+                    payload['baseline'] = _baseline_before({parent['id']: parent}, current)
+            intent = store.add_intent(kind, cal["account_id"], cal["id"], target["id"], payload, scope=scope, expected_etag=_write_etag(store, cal, current), op_id=op_id)
+            previous_by_calendar[cal['id']] = intent['id']
+            result["_intent_ids"].append(intent["id"])
         assignments.append({"calendar_id": target["calendar_id"], "calendar_name": cal["name"], "event_id": target["id"], **result})
     fresh = store.get_event(targets[0]["id"]) if targets and targets[0] else None
     out = {"status": "ok", "event": fresh, "assignments": assignments}
@@ -472,13 +545,13 @@ def update_event(store, providers, event_id: str, changes: Dict[str, Any], scope
     return out
 
 
-def delete_event(store, providers, event_id: str, scope: str = SCOPE_THIS, owner: str = "", send_updates: bool = False,
+
+def _stage_delete_event(store, event_id: str, scope: str = SCOPE_THIS, send_updates: bool = False,
                  cascade: bool = True) -> Dict[str, Any]:
     """Delete an event, an occurrence or a series; ``cascade`` (28 A) takes the linked copies along,
     ``cascade=False`` removes one copy only (reassignment)."""
     if scope not in SCOPES:
         raise ValueError("scope: this | following | all")
-    owner = owner or lease_owner()
     base_id, occ_key = _series_id(event_id)
     row = store.get_event(base_id)
     if row is None or row.get("deleted_at"):
@@ -497,6 +570,7 @@ def delete_event(store, providers, event_id: str, scope: str = SCOPE_THIS, owner
     for target in rows:
         if target["id"] in blocked:
             continue
+        before = {e['id']: e for e in [target] + store.exceptions_for(target['id'])}
         cal = store.get_calendar(target["calendar_id"])
         external = cal is not None and cal["provider"] != PROVIDER_LOCAL
         if occ_key and scope == SCOPE_THIS:
@@ -519,16 +593,41 @@ def delete_event(store, providers, event_id: str, scope: str = SCOPE_THIS, owner
             assignments.append({"calendar_id": target["calendar_id"], "event_id": target["id"], "status": INTENT_DONE})
             continue
         kind = "update" if (occ_key and scope != SCOPE_ALL) else "delete"
-        intent = store.add_intent(kind, cal["account_id"], cal["id"], victim["id"], {"scope": scope, "changes": {}, "send_updates": bool(send_updates), "op_id": op_id},
-                                  scope=scope, expected_etag=victim.get("etag") or "")
-        result = execute_intent(store, providers, intent, owner)
+        store.update_event(victim['id'], {'sync_state': 'pending_delete' if kind=='delete' else 'pending'})
+        changes = {'status': 'cancelled'} if occ_key and scope == SCOPE_THIS else {}
+        payload = {"scope": scope, "changes": changes, "send_updates": bool(send_updates), "op_id": op_id,
+                   'baseline': _baseline_before(before, victim), 'family_root_id': target['id'],
+                   'restore_rows': [{k: v for k, v in e.items() if k not in ('raw_payload','provider','account_id','calendar_name')}
+                                    for e in before.values()]}
+        intent = store.add_intent(kind, cal["account_id"], cal["id"], victim["id"], payload,
+                                  scope=scope, expected_etag=_write_etag(store, cal, victim))
+        result = {"status": INTENT_PENDING, "_intent_ids": [intent["id"]]}
         assignments.append({"calendar_id": target["calendar_id"], "calendar_name": cal["name"], "event_id": victim["id"], **result})
     return {"status": "ok", "assignments": assignments}
+
 
 
 def deletion_targets(store, row: Dict[str, Any], cascade: bool = True) -> List[Dict[str, Any]]:
     """Exact linked-master set affected by delete; used by preview and execution alike."""
     return [row] + ([m for m in _group_masters(store, row) if m["id"] != row["id"]] if cascade else [])
+
+
+def _baseline_before(before, target):
+    baseline = before.get(target['id'])
+    if baseline is None and target.get('master_id') in before:
+        master = before[target['master_id']]
+        slot = parse_stored(target['recurrence_id'])
+        baseline = {**master, 'start_utc': iso_utc(slot),
+                    'end_utc': iso_utc(slot + (parse_stored(master['end_utc']) - parse_stored(master['start_utc']))),
+                    'rrule': '', 'rdates': '', 'exdates': ''}
+    return {k: v for k, v in (baseline or {}).items()
+            if k not in ('raw_payload','provider','account_id','calendar_name')}
+
+
+def _write_etag(store, calendar, event):
+    if calendar['provider'] == 'yandex' and event.get('master_id'):
+        return str((store.get_event(event['master_id']) or {}).get('etag') or '')
+    return str(event.get('etag') or '')
 
 
 def _apply_changes(store, row: Dict[str, Any], changes: Dict[str, Any]) -> None:
@@ -671,7 +770,7 @@ def _ensure_exception(store, master: Dict[str, Any], occ_key: str, changes: Dict
     occ_start = parse_stored(occ_key) or m_start
     duration = (m_end - m_start) if (m_start and m_end) else timedelta(hours=1)
     row = {k: master.get(k) for k in ("calendar_id", "uid", "visibility", "availability", "is_primary", "title", "description",
-                                       "location", "tz", "all_day", "organizer", "attendees_json", "origin", "link_group_id")}
+                                       "location", "tz", "all_day", "organizer", "attendees_json", "my_response", "origin", "link_group_id")}
     row["reminders_json"] = "[]"  # no own override: later whole-series reminder edits remain effective
     # The exception has NO provider identity of its own: Google resolves the instance id from the master + recurrence key,
     # CalDAV writes it inside the master's resource (roast/triad F01).
@@ -772,7 +871,7 @@ def _split_series(store, master: Dict[str, Any], occ_key: str, changes: Dict[str
     until_part = next((p.split("=", 1)[1] for p in original_rrule.split(";") if p.upper().startswith("UNTIL=")), "")
     # EXDATE/RDATE at/after the cut belong to the new series (shifted with it); the old one keeps only the earlier ones
     row = {k: master.get(k) for k in ("calendar_id", "visibility", "availability", "is_primary", "title", "description", "location", "tz",
-                                       "all_day", "organizer", "attendees_json", "reminders_json", "origin")}
+                                       "all_day", "organizer", "attendees_json", "my_response", "reminders_json", "origin")}
     from model import get_tz
     split_tz = get_tz(master.get("tz") or "")
     split_all_day = bool(master.get("all_day"))
@@ -872,14 +971,19 @@ def _split_series(store, master: Dict[str, Any], occ_key: str, changes: Dict[str
 # ── intents ─────────────────────────────────────────────────────────
 
 def _predecessor(store, intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """The newest earlier intent this one depends on: an older write of the same event, or an older write of the master for an exception."""
-    created = str(intent.get("created_at") or "")
-    older = [i for i in store.intents_for_event(intent["event_id"]) if i["id"] != intent["id"] and str(i.get("created_at") or "") < created]
+    """Ordinary event ordering uses durable insertion order, not wall-clock time."""
+    writes = store.intents_for_event(intent['event_id'])
+    index = next((n for n, i in enumerate(writes) if i['id'] == intent['id']), len(writes))
+    older = [i for i in writes[:index] if i['state'] != 'resolved']
     if older:
         return older[-1]
-    event = store.get_event(intent["event_id"])
+    event = json.loads(intent.get('payload_json') or '{}').get('desired') or store.get_event(intent['event_id'])
     if event and event.get("master_id"):
-        writes = [i for i in store.intents_for_event(event["master_id"]) if i["kind"] in ("create", "update") and str(i.get("created_at") or "") < created]
+        with store._conn() as c:
+            writes = [dict(i) for i in c.execute("SELECT * FROM intents WHERE event_id=? "
+                      "AND kind IN ('create','update') AND state!='resolved' "
+                      "AND rowid<(SELECT rowid FROM intents WHERE id=?) ORDER BY rowid",
+                      (event['master_id'], intent['id']))]
         if writes:
             return writes[-1]
     return None
@@ -888,6 +992,22 @@ def _predecessor(store, intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def _blocked_by(store, intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """The predecessor when it is still pending (wait), or when it died while this intent was already queued (do not run);
     a NEW intent the owner issued after the failure is a fresh attempt and passes."""
+    payload = json.loads(intent.get('payload_json') or '{}')
+    dependency = payload.get('after_intent_id')
+    for earlier in payload.get('prior_intent_ids', []):
+        predecessor = store.get_intent(earlier)
+        if predecessor is None or predecessor['state'] != INTENT_DONE:
+            return predecessor or {'id': earlier, 'state': INTENT_FAILED}
+    if dependency:
+        predecessor = store.get_intent(dependency)
+        if predecessor is None or predecessor['state'] != INTENT_DONE:
+            return predecessor or {'id': dependency, 'state': INTENT_FAILED}
+    event = store.get_event(intent['event_id'])
+    if event and not event.get('external_id') and not event.get('href'):
+        births = [i for i in store.intents_for_event(event['id']) if i['kind'] == 'create'
+                  and i['state'] != 'resolved' and json.loads(i['payload_json']).get('after_intent_id')]
+        if births and births[0]['id'] != intent['id'] and births[0]['state'] != INTENT_DONE:
+            return births[0]
     pred = _predecessor(store, intent)
     if pred is None:
         return None
@@ -942,7 +1062,65 @@ def execute_intent(store, providers, intent: Dict[str, Any], owner: str) -> Dict
     return run_leased_intent(store, providers, leased)
 
 
+def created_content_matches(requested, observed):
+    """Compare the serialized creation's meaning, not provider-added metadata.
+
+    A matching lost-create readback acknowledges only that creation. It never
+    licenses rewriting a resource another client has since changed.
+    """
+    if not requested or not observed:
+        return False
+    for key in ('title', 'description', 'location', 'start_utc', 'end_utc',
+                'all_day', 'rrule', 'rdates', 'exdates', 'status', 'availability'):
+        if (requested.get(key) or '') != (observed.get(key) or ''):
+            return False
+    def contains(wanted, actual):
+        if isinstance(wanted, dict):
+            return isinstance(actual, dict) and all(contains(v, actual.get(k)) for k, v in wanted.items())
+        if isinstance(wanted, list):
+            return isinstance(actual, list) and len(wanted) == len(actual) and all(contains(a,b) for a,b in zip(wanted,actual))
+        return (wanted or '') == (actual or '')
+    return all(contains(json.loads(requested.get(k) or '[]'), json.loads(observed.get(k) or '[]'))
+               for k in ('attendees_json', 'reminders_json'))
+
+
+def _matches_unversioned_baseline(payload, remote, adapter):
+    """A first version pin cannot overwrite fields changed while we were offline.
+
+    Ordinary Google exception PATCHes are sparse. Compare the fields they will
+    replace, not unrelated provider additions; subsequent retries use the pin.
+    """
+    baseline = payload.get('baseline')
+    if not baseline:
+        return False
+    if payload.get('response'):
+        email = str(getattr(adapter, 'email', '')).lower()
+        def response(row):
+            people = json.loads(row.get('attendees_json') or '[]')
+            own = next((p for p in people if p.get('self') or str(p.get('email', '')).lower() == email), {})
+            return str(row.get('my_response') or own.get('status') or own.get('responseStatus') or 'needsAction').lower()
+        return response(baseline) == response(remote)
+    changes = payload.get('changes') or {}
+    keys = set(changes) | {'status'}
+    if any(k in keys for k in ('start_utc', 'end_utc', 'all_day', 'tz')):
+        keys.update(('start_utc', 'end_utc', 'all_day'))
+        keys.discard('tz')  # equivalent zone spellings do not change the instants
+    for key in keys:
+        field = {'attendees': 'attendees_json', 'reminders': 'reminders_json'}.get(key, key)
+        if field.endswith('_json'):
+            old, new = json.loads(baseline.get(field) or '[]'), json.loads(remote.get(field) or '[]')
+            if old != new:
+                return False
+        elif (baseline.get(field) or '') != (remote.get(field) or ''):
+            return False
+    return True
+
+
 def run_leased_intent(store, providers, intent: Dict[str, Any]) -> Dict[str, Any]:
+    current = store.current_leased_intent(intent)
+    if current is None:
+        return {'status': INTENT_PENDING, 'message': 'операция больше не принадлежит этой попытке'}
+    intent = current
     if _superseded_exception_write(store, intent) is not None:
         store.settle_intent(intent["id"], INTENT_DONE, {"note": "superseded by deletion"})
         return {"status": INTENT_DONE, "message": "исключение или серия удалены"}
@@ -966,36 +1144,60 @@ def run_leased_intent(store, providers, intent: Dict[str, Any]) -> Dict[str, Any
         payload = json.loads(intent.get("payload_json") or "{}")
     except ValueError:
         payload = {}
+    desired = payload.get('desired')
+    if desired:
+        identity = {k: event.get(k) for k in ('external_id','href','etag','deleted_at')}
+        event = {**event, **desired, **identity}
+    if payload.get('relocated_from_master') and not payload.get('_provider_external_id'):
+        # An old-resource ACK cannot re-address a relocated override backwards.
+        event.update(external_id='', href='', etag='')
     if event.get("master_id"):   # every exception write resolves through its master (CalDAV: the master's resource; Google: instance id)
         master = store.get_event(event["master_id"])
         event = {**event, "master_external_id": (master or {}).get("external_id") or "", "master_href": (master or {}).get("href") or "",
                  "master_etag": (master or {}).get("etag") or ""}
     modes = store.get_setting("reminder_mode") or {}
     payload["mute_provider_reminders"] = bool(modes.get(str(cal["id"])))
-    expected = intent.get('expected_etag') or event.get('etag') or ''
-    predecessor = _predecessor(store, intent)
-    if predecessor and predecessor['state'] == INTENT_DONE:
-        previous = json.loads(predecessor.get('payload_json') or '{}')
-        if payload.get('op_id') and previous.get('op_id') == payload['op_id']:
-            expected = event.get('etag') or ''
+    expected = intent.get('expected_etag') or ''
     payload['_expected_etag'] = expected
     try:
+        if cal['provider'] == 'google' and intent['kind'] != 'create' and (event.get('external_id') or event.get('master_id')):
+            if payload.get('_provider_external_id'):
+                event['external_id'] = payload['_provider_external_id']
+            if not expected:
+                if not desired and int(intent.get('attempts') or 0) > 1:
+                    raise ProviderError('conflict', 'исход прежней безусловной записи неизвестен; нужна сверка')
+                observed = adapter.read_current(cal, event, payload)
+                remote = observed.get('event') or {}
+                if not remote.get('external_id') or not observed.get('etag'):
+                    raise ProviderError('conflict', 'Google не подтвердил событие и ETag; запись не отправлена')
+                if not _matches_unversioned_baseline(payload, remote, adapter):
+                    raise ProviderError('conflict', 'событие изменилось до первой отправки; сравни версии перед выбором')
+                pinned = store.pin_provider_version(intent, remote['external_id'], observed['etag'])
+                if pinned is None:
+                    return {'status': INTENT_PENDING, 'message': 'lease изменилась; запись не отправлена'}
+                intent = pinned
+                payload.update(json.loads(intent['payload_json']))
+                expected = intent['expected_etag']
+                event['external_id'] = payload.get('_provider_external_id') or event.get('external_id')
+            payload['_expected_etag'] = expected
         if intent["kind"] == "create":
             res = adapter.create(cal, event, payload)
             # The provider may answer after an owner delete. CAS the new identity
             # and the tombstone in one SQLite transaction, never revive the row.
-            store.record_created_event(event["id"], res)
             if res.get("existed"):
-                # An earlier attempt landed but its answer was lost, and the owner may have edited the event since:
-                # the provider must end with the current content (that attempt already sent any invitations).
-                written = adapter.update(cal, {**event, **res}, res.get("etag") or "", {**payload, "send_updates": False})
-                store.record_created_event(event["id"], {**res, "etag": written.get("etag") or res.get("etag") or ""})
+                store.record_created_event(event['id'], res)
+                if res.get('cancelled') and (int(intent['attempts']) == 1 or expected):
+                    pinned = store.pin_provider_version(intent, res.get('external_id') or '', res.get('etag') or '')
+                    if pinned is None:
+                        return {'status': INTENT_PENDING, 'message': 'lease изменилась; восстановление не отправлено'}
+                    intent, expected = pinned, pinned.get('expected_etag') or ''
+                    written = adapter.update(cal, {**event, **res}, expected,
+                                             {**payload, '_revive_cancelled': True, 'send_updates': False})
+                    res = {**res, 'etag': written.get('etag') or ''}
+                elif not res.get('matches'):
+                    raise ProviderError('conflict', 'прежнее создание найдено, но содержимое изменилось; нужна сверка')
         elif intent["kind"] == "update":
             res = adapter.update(cal, event, expected, payload)
-            store.update_event(event["id"], {"etag": res.get("etag") or event.get("etag") or "", "sync_state": "synced",
-                                             **({"external_id": res["external_id"]} if res.get("external_id") else {})})
-            if cal['provider'] == 'yandex':
-                store.advance_resource_etag(event.get('master_id') or event['id'], expected, res.get('master_etag') or res.get('etag') or '')
         elif intent["kind"] == "delete":
             if not event.get("external_id") and not event.get("href"):
                 creates = [i for i in store.intents_for_event(event["id"]) if i["kind"] == "create"]
@@ -1031,16 +1233,16 @@ def run_leased_intent(store, providers, intent: Dict[str, Any]) -> Dict[str, Any
                         return {"status": INTENT_DONE, "message": "у провайдера события нет, локальная запись удалена"}
                     store.record_created_event(event["id"], found)   # the tombstone stays: deletion is still requested
                     event = {**event, **found}
-                    expected = found.get('etag') or ''
+                    pinned = store.pin_provider_version(intent, found.get('external_id') or '', found.get('etag') or '')
+                    if pinned is None:
+                        return {'status': INTENT_PENDING, 'message': 'lease изменилась; удаление не отправлено'}
+                    intent, expected = pinned, pinned.get('expected_etag') or ''
             adapter.delete(cal, event, expected, payload)
             store.delete_event(event["id"], hard=True)
         elif intent["kind"] == "rsvp":
             if not event.get("external_id") and not event.get("href") and not event.get("master_external_id") and not event.get("master_href"):
                 return _defer(store, intent, "ответ отправится после записи события у провайдера", kind="retry")
             res = adapter.respond(cal, event, payload)
-            store.update_event(event["id"], {"etag": res.get("etag") or event.get("etag") or "", "sync_state": "synced"})
-            if cal['provider'] == 'yandex':
-                store.advance_resource_etag(event.get('master_id') or event['id'], expected, res.get('master_etag') or res.get('etag') or '')
         else:
             store.settle_intent(intent["id"], INTENT_FAILED, {"error": f"unknown intent kind {intent['kind']}"})
             return {"status": INTENT_FAILED, "message": "неизвестная операция"}
@@ -1066,7 +1268,11 @@ def run_leased_intent(store, providers, intent: Dict[str, Any]) -> Dict[str, Any
         store.update_event(event["id"], {"sync_state": "pending_delete" if intent["kind"] == "delete" else "failed"})
         store.settle_intent(intent["id"], INTENT_FAILED, {"error": f"{type(exc).__name__}: {exc}"})
         return {"status": INTENT_FAILED, "message": f"внутренняя ошибка адаптера: {type(exc).__name__}"}
-    store.settle_intent(intent["id"], INTENT_DONE, {"ok": True})
+    if intent['kind'] in ('create','update','rsvp'):
+        if not store.acknowledge_write(intent, event, res, expected, shared_resource=cal['provider']=='yandex'):
+            return {'status': INTENT_PENDING, 'message': 'ответ провайдера не привязан к текущей попытке; нужна сверка'}
+    else:
+        store.settle_intent(intent["id"], INTENT_DONE, {"ok": True})
     return {"status": INTENT_DONE}
 
 
@@ -1088,13 +1294,13 @@ def retry_due_intents(store, providers, owner: str = "companion", limit: int = 2
     return out
 
 
-def reassign_event(store, providers, row: Dict[str, Any], calendar_ids: List[str], owner: str = "") -> Dict[str, Any]:
+def _stage_reassign_event(store, row: Dict[str, Any], calendar_ids: List[str]) -> Dict[str, Any]:
     """Change the set of calendars an event lives in (12 A: only on explicit command).
 
     Copies are added/removed per the target calendars' ``publish_mode``; the primary row stays where it is —
     moving the primary itself is a delete + create the owner asks for explicitly.
     """
-    owner = owner or lease_owner()
+    row = store.get_event(row["id"]) or row
     if row.get("master_id"):
         row = store.get_event(row["master_id"]) or row   # an occurrence id means its whole series
     clicked_cal = store.get_calendar(row["calendar_id"])
@@ -1157,7 +1363,7 @@ def reassign_event(store, providers, row: Dict[str, Any], calendar_ids: List[str
             added.append({"calendar_id": cid, "calendar_name": cal["name"], "event_id": saved["id"], "status": INTENT_DONE})
             continue
         intent = store.add_intent("create", cal["account_id"], cid, saved["id"], {"send_updates": False}, op_id=op_id)
-        outcome = execute_intent(store, providers, intent, owner)
+        outcome = {"status": INTENT_PENDING, "_intent_ids": [intent["id"]]}
         for exc_row in exception_rows:
             # the exceptions resolve through the master and are written by the companion queue (one resource PUT each — not inside the tool call)
             store.add_intent("update", cal["account_id"], cid, exc_row["id"], {"scope": SCOPE_THIS, "changes": {}, "send_updates": False}, scope=SCOPE_THIS, op_id=op_id)
@@ -1165,7 +1371,7 @@ def reassign_event(store, providers, row: Dict[str, Any], calendar_ids: List[str
     for cid, m in current.items():
         if cid in wanted or m["id"] == row["id"]:
             continue
-        res = delete_event(store, providers, m["id"], scope=SCOPE_ALL, owner=owner, cascade=False)   # this copy only, never the group
+        res = _stage_delete_event(store, m["id"], scope=SCOPE_ALL, cascade=False)   # this copy only, never the group
         removed.append({"calendar_id": cid, "calendar_name": m.get("calendar_name"), "event_id": m["id"],
                         "assignments": res.get("assignments") or [{"calendar_id": cid, "event_id": m["id"], "status": INTENT_DONE}]})
     return {"added": added, "removed": removed, "kept_primary": row["calendar_id"]}
