@@ -80,7 +80,7 @@ def agenda_payload(ctx: tools.Context, view: str, anchor: str, calendar_ids: Any
                        "default": bool(c["is_default"])} for c in cals],
         "events": events, "hidden_busy": hatches, "usual": usual if show_hidden else [],
         "show_hidden": show_hidden, "working_hours": ctx.store.get_setting("working_hours") or "09:00-19:00",
-        "sync": {"pending": pending.get("pending", 0), "conflict": pending.get("conflict", 0), "companion": ctx.companion_health().get("state")},
+        "sync": {"pending": pending.get("pending", 0), "conflict": pending.get("conflict", 0), "failed": pending.get("failed", 0), "companion": ctx.companion_health().get("state")},
         "accounts": [{"id": a["id"], "alias": a["alias"], "provider": a["provider"], "status": a["status"], "last_sync": a.get("last_sync")} for a in ctx.store.list_accounts()],
     }
 
@@ -108,6 +108,10 @@ def register_routes(api, make_ctx) -> None:
         spec, err = tools._spec_from_args(ctx, body.get("start"), body.get("end"), body.get("duration_min") or 60, body.get("all_day"))
         if err:
             return _err(err)
+        try:
+            body["rrule"] = ops.validate_rrule(body.get("rrule"), spec["start_utc"], spec["tz"])
+        except ValueError as exc:
+            return _err(str(exc))
         cal_ids, err = ctx.resolve_calendars(body.get("calendars") or body.get("calendar_id"))
         if err:
             return _err(err)
@@ -171,6 +175,11 @@ def register_routes(api, make_ctx) -> None:
         for key in ("title", "description", "location", "availability", "rrule"):
             if key in body and body[key] is not None:
                 changes[key] = str(body[key])
+        if "rrule" in changes:
+            try:
+                changes["rrule"] = ops.validate_rrule(changes["rrule"], changes.get("start_utc") or current["start_utc"], current.get("tz") or "")
+            except ValueError as exc:
+                return _err(str(exc))
         if "hidden" in body:
             changes["visibility"] = VISIBILITY_HIDDEN if body.get("hidden") else VISIBILITY_SHOWN
         if body.get("reminders") is not None and body.get("reminders_edited", True):

@@ -292,6 +292,7 @@
         d.accounts.forEach(function (a) { if (a.provider !== 'local') parts.push(a.alias + ': ' + (a.status === 'ok' ? 'ок' : a.status)); });
         if (d.sync.pending) parts.push('ожидает синхронизации: ' + d.sync.pending);
         if (d.sync.conflict) parts.push('конфликтов: ' + d.sync.conflict);
+        if (d.sync.failed) parts.push('не отправлено: ' + d.sync.failed);
         parts.push('фон: ' + (d.sync.companion || 'неизвестно'));
         return el('div', { class: 'status', text: parts.join(' · ') + ' · ' + d.timezone });
     }
@@ -371,6 +372,10 @@
             api('event/get?id=' + encodeURIComponent(ev.id)).then(function (r) {
                 if (state.editing !== token) return;
                 var full = r.event || {};
+                if (full.conflict && full.conflict.status !== 'not_conflicted') {
+                    token.loadError = 'Конфликт с провайдером. В чате попроси показать обе версии события '
+                        + (full.conflict.event_id || full.id || ev.id) + ' и выбрать, какую оставить.';
+                }
                 token.description = full.description || '';
                 token.reminders = full.reminders || [];
                 token.attendees = (full.attendees || []).map(function (a) { return a.email || String(a); });
@@ -423,7 +428,12 @@
             /* two-step delete: the sandbox has no confirm dialog, so the button arms itself first */
             var del = el('button', { type: 'button', class: 'danger', text: f.armed ? 'Точно удалить' + (f.series ? ' (' + scopeSel.options[scopeSel.selectedIndex].text + ')' : '') + '?' : 'Удалить' });
             del.addEventListener('click', function () {
-                if (!f.armed) { f.armed = true; render(); setTimeout(function () { if (state.editing === f && f.armed) { f.armed = false; render(); } }, 5000); return; }
+                if (!f.armed) {
+                    f.armed = true;
+                    del.textContent = 'Точно удалить' + (f.series ? ' (' + scopeSel.options[scopeSel.selectedIndex].text + ')' : '') + '?';
+                    setTimeout(function () { if (state.editing === f && f.armed) { f.armed = false; del.textContent = 'Удалить'; } }, 5000);
+                    return;
+                }
                 del.disabled = true; status.textContent = 'Удаляю…'; status.className = 'status';
                 post('event/delete', { id: f.id, scope: f.series ? scopeSel.value : 'this', send_updates: notify.checked })
                     .then(function (r) { state.editing = null; noteAssignments(r); return load(); })
@@ -433,9 +443,18 @@
         }
         actions.appendChild(el('span', { class: 'spacer' }));
         actions.appendChild(el('button', { type: 'button', text: 'Отмена', onclick: function () { state.editing = null; render(); } }));
-        actions.appendChild(el('button', { type: 'submit', class: 'primary', text: f.id ? 'Сохранить' : 'Создать' }));
-        form.addEventListener('submit', function (ev) {
-            ev.preventDefault();
+        var saveButton = el('button', { type: 'button', class: 'primary', text: f.id ? 'Сохранить' : 'Создать' });
+        actions.appendChild(saveButton);
+        // Module frames deliberately do not allow native form submission.
+        form.addEventListener('submit', function (ev) { ev.preventDefault(); });
+        form.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Enter' && !ev.isComposing && ev.target.tagName === 'INPUT' && ev.target.type !== 'checkbox') {
+                ev.preventDefault(); saveCard();
+            }
+        });
+        saveButton.addEventListener('click', saveCard);
+        function saveCard() {
+            if (saveButton.disabled || !form.reportValidity()) return;
             if (f.loading) { status.textContent = 'Подожди: детали события ещё загружаются'; return; }
             var cals = chosenCals();
             if (!cals.length) { status.textContent = 'Выбери хотя бы один календарь'; status.className = 'status err'; return; }
@@ -468,10 +487,11 @@
                 body.calendars = cals; body.reminders = remList; body.attendees = attList;
                 p = post('event', body);
             }
+            saveButton.disabled = true;
             status.textContent = 'Сохраняю…'; status.className = 'status';
             p.then(function (r) { state.editing = null; noteAssignments(r); return load(); })
-                .catch(function (e) { status.textContent = e.message; status.className = 'status err'; });
-        });
+                .catch(function (e) { saveButton.disabled = false; status.textContent = e.message; status.className = 'status err'; });
+        }
         form.appendChild(el('div', { class: 'title', text: f.id ? 'Событие' : 'Новое событие', style: 'font-weight:600;font-size:15px' }));
         form.appendChild(field('Название', title));
         form.appendChild(field('Начало', start));

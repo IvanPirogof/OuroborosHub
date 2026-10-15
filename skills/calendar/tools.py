@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import ops
+import conflicts as conflict_ops
 import reminders as rem
 from model import (
     AVAIL_BUSY, AVAIL_FREE, AVAIL_SOFT, DEFAULT_LOCAL_CALENDAR_ID, MAX_EVENTS, MAX_WINDOW_DAYS, PROVIDER_GOOGLE,
@@ -42,9 +43,9 @@ class Context:
         return now_utc().astimezone(self.tz)
 
     def occurrences(self, start: datetime, end: datetime, calendar_ids: Optional[Sequence[str]] = None,
-                    include_hidden: bool = True, strict: bool = False) -> List[Dict[str, Any]]:
+                    include_hidden: bool = True, strict: bool = False, failed=None) -> List[Dict[str, Any]]:
         rows = self.store.window(start, end, calendar_ids, include_hidden=include_hidden)
-        return ops.expand(rows, start, end, self.store.exceptions_for, owner_tz=self.tz, strict=strict)
+        return ops.expand(rows, start, end, self.store.exceptions_for, owner_tz=self.tz, strict=strict, failed=failed)
 
     def resolve_calendars(self, spec: Any) -> Tuple[List[str], str]:
         """Names, aliases, ids, provider words, 'all', 'busy_set', 'default' → ordered calendar ids."""
@@ -231,7 +232,7 @@ def cal_events(ctx: Context, start: str = "", end: str = "", calendars: Any = No
     if id:
         base, occ = ops._series_id(str(id))
         row = st.get_event(base)
-        if row is None or row.get("deleted_at"):
+        if row is None or (row.get('deleted_at') and row.get('sync_state') != 'conflict'):
             return json_dumps({"status": "not_found", "message": f"событие {id} не найдено"})
         try:
             master, occ = ops.resolve_occurrence(st, row, occ)
@@ -252,7 +253,15 @@ def cal_events(ctx: Context, start: str = "", end: str = "", calendars: Any = No
         out["assignments"] = [{"calendar_id": m["calendar_id"], "calendar_name": m.get("calendar_name"), "event_id": m["id"],
                                "sync_state": m.get("sync_state")} for m in st.group_masters(row.get("link_group_id") or "")] if row.get("link_group_id") else []
         out["intents"] = [{"kind": i["kind"], "state": i["state"], "attempts": i["attempts"], "result": i.get("result_json")} for i in st.intents_for_event(base)[-5:]]
-        return bounded_result({"status": "ok", "event": out})
+        inspection = conflict_ops.inspect(ctx, str(id))
+        if inspection.get('status') != 'not_conflicted':
+            out['conflict'] = inspection
+        result = {'status': 'ok', 'event': out}
+        if len(json_dumps(result)) > 14000 and out.get('conflict'):
+            # A shortened comparison must not carry an approval token.
+            out['conflict'].pop('resolution_token', None)
+            out['conflict']['comparison_incomplete'] = True
+        return bounded_result(result)
     s, e = ctx.parse_range(start, end)
     cal_ids: Optional[List[str]] = None
     if calendars:
@@ -315,6 +324,10 @@ def cal_create(ctx: Context, title: str = "", start: str = "", end: str = "", du
     spec, err = _spec_from_args(ctx, start, end, duration_min, all_day)
     if err:
         return json_dumps({"status": "error", "message": err})
+    try:
+        rrule = ops.validate_rrule(rrule, spec["start_utc"], spec["tz"])
+    except ValueError as exc:
+        return json_dumps({"status": "error", "message": str(exc)})
     cal_ids, err = ctx.resolve_calendars(calendars)
     if err:
         return json_dumps({"status": "error", "message": err})
@@ -347,7 +360,18 @@ def cal_create(ctx: Context, title: str = "", start: str = "", end: str = "", du
 def cal_update(ctx: Context, id: str = "", start: str = "", end: str = "", duration_min: Any = None, all_day: Any = None, title: str = "",
                description: Any = None, location: Any = None, hidden: Any = None, availability: str = "", calendars: Any = None,
                attendees: Any = None, reminders: Any = None, rrule: Any = None, response: str = "", scope: str = SCOPE_THIS,
-               send_updates: bool = False, confirm: bool = False, **kwargs) -> str:
+               send_updates: bool = False, confirm: bool = False, resolution: str = '', resolution_token: str = '', **kwargs) -> str:
+    if resolution or resolution_token:
+        if not id:
+            return json_dumps({'status':'error', 'message':'нужен id выбранной копии'})
+        if any((start, end, title, availability, calendars, response, send_updates, scope != SCOPE_THIS)) or any(
+                v is not None for v in (duration_min, all_day, description, location, hidden, attendees, reminders, rrule)) or kwargs:
+            return json_dumps({'status':'error', 'message':'resolution применяется отдельно, без новых изменений'})
+        if not _bool(confirm):
+            return json_dumps({'status':'needs_confirm', 'message':CONFIRM_MESSAGE})
+        result = conflict_ops.resolve(ctx, str(id), str(resolution), str(resolution_token))
+        warning = _plan_reminders(ctx) if result.get('status') in ('resolved','pending') else ''
+        return bounded_result({**result, **({'warning':warning} if warning else {})})
     if not id:
         return json_dumps({"status": "error", "message": "нужен id события (из cal_events)"})
     base, occ = ops._series_id(str(id))
@@ -367,7 +391,7 @@ def cal_update(ctx: Context, id: str = "", start: str = "", end: str = "", durat
     if scope == SCOPE_FOLLOWING and not occ and not row.get("master_id"):
         return json_dumps({"status": "error", "message": "scope='following' требует id вхождения (…@дата): с какой даты менять"})
     changes: Dict[str, Any] = {}
-    if start or end or duration_min is not None:
+    if start or end or duration_min is not None or all_day is not None:
         exception = next((e for e in ctx.store.exceptions_for(row["id"]) if e.get("recurrence_id") == occ), None) if occ else None
         effective = exception or row
         old_s = parse_stored(effective["start_utc"] if exception else (occ or row["start_utc"]))
@@ -399,7 +423,10 @@ def cal_update(ctx: Context, id: str = "", start: str = "", end: str = "", durat
         is_default = isinstance(reminders, str) and reminders.strip().lower() == REMINDERS_DEFAULT
         changes["reminders"] = REMINDERS_DEFAULT if is_default else [_int(x, 0) for x in _list(reminders)]
     if rrule is not None:
-        changes["rrule"] = str(rrule)
+        try:
+            changes["rrule"] = ops.validate_rrule(rrule, changes.get("start_utc") or row["start_utc"], row.get("tz") or "")
+        except ValueError as exc:
+            return json_dumps({"status": "error", "message": str(exc)})
     if response:
         resp = str(response).lower()
         if resp not in ("accepted", "declined", "tentative"):
@@ -474,7 +501,12 @@ def cal_free(ctx: Context, start: str = "", end: str = "", duration_min: int = 6
             return json_dumps({"status": "error", "message": err})
     else:
         cal_ids = [c["id"] for c in ctx.store.list_calendars() if c["role_busy"]]
-    occs = ctx.occurrences(s, e, cal_ids) if cal_ids else []
+    failed = {}
+    occs = ctx.occurrences(s, e, cal_ids, strict=True, failed=failed) if cal_ids else []
+    with ctx.store._conn() as c:
+        disputed = [r['id'] for r in c.execute("SELECT id,calendar_id FROM events WHERE sync_state='conflict'")
+                    if r['calendar_id'] in cal_ids]
+    incomplete = bool(failed or disputed)
     hard, soft = ops.busy_intervals(occs)
     wh = parse_working_hours(working_hours or ctx.store.get_setting("working_hours") or "")
     slots = ops.free_windows(hard, s, e, timedelta(minutes=max(5, _int(duration_min, 60))), wh, ctx.tz, max_slots=max(1, min(_int(kwargs.get("max", max_slots), 6), 10)))
@@ -486,9 +518,12 @@ def cal_free(ctx: Context, start: str = "", end: str = "", duration_min: int = 6
     return bounded_result({
         "status": "ok", "timezone": tz_name(ctx.tz), "range": {"start": iso_local(s, ctx.tz), "end": iso_local(e, ctx.tz)},
         "duration_min": _int(duration_min, 60), "working_hours": f"{wh[0]:%H:%M}-{wh[1]:%H:%M}",
+        'availability_complete': not incomplete, 'conflict_event_ids': disputed, 'unexpanded_series': failed,
         "sources": cal_ids, "slots": [{"start": iso_local(a, ctx.tz), "end": iso_local(b, ctx.tz)} for a, b in slots],
         "soft_overlaps": soft_hits[:10],
-        "next_step": "Предложи владельцу 2–4 варианта (escalate, recommended = первый без soft_overlaps), затем cal_create с confirm=true",
+        'next_step': ('Окна предварительные: сначала проверь конфликтные события через cal_events(id) и ошибки повторений; '
+                      'не считай эти окна подтверждённо свободными' if incomplete else
+                      'Предложи владельцу 2–4 варианта, затем cal_create с confirm=true'),
     })
 
 
@@ -750,11 +785,12 @@ def reload_google(ctx: Context) -> Dict[str, Any]:
 
 def _plan_reminders(ctx: Context) -> str:
     """Reconcile waiting reminders through the planner; do not clear them before reading occurrences."""
+    held: Dict[str, str] = {}
     try:
-        rem.plan(ctx.store, lambda s, e: ctx.occurrences(s, e, strict=True))
-        return ""
+        rem.plan(ctx.store, lambda s, e: ctx.occurrences(s, e, strict=True, failed=held), held=held)
     except Exception as exc:
         return f"очередь напоминаний не обновлена: {type(exc).__name__}: {exc}"
+    return ("очередь напоминаний не обновлена для серий: " + "; ".join(f"{key}: {value}" for key, value in held.items())) if held else ""
 
 
 def _assignment_message(verb: str, ev: Dict[str, Any], assignments: List[Dict[str, Any]], tz) -> str:

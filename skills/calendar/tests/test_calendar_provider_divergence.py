@@ -135,6 +135,10 @@ class FakeGoogle:
         self.calls.append((method, path, dict(params or {}), body))
         if self.down:
             raise ops.ProviderError("network", "fake google unreachable")
+        if method in ('PATCH', 'PUT', 'DELETE') and (headers or {}).get('If-Match'):
+            eid = urllib.parse.unquote(path.split('/')[4])
+            if (self.events.get(eid) or {}).get('etag') != headers['If-Match']:
+                raise ops.ProviderError('conflict', '412 etag', 412)
         result = self._apply(method, path, params or {}, body)
         if method in self.lose_response:
             self.lose_response.discard(method)
@@ -211,10 +215,17 @@ def run_open_intents(ctx, rounds=1):
 
 
 def exhaust_create_retries(ctx, event_id):
+    """Retained legacy state from versions that abandoned network retries.
+
+    Modern transient writes stay pending; these tests still qualify recovery of
+    old failed creates whose remote outcome was unknown, not the old retry cap.
+    """
     intent = next(i for i in ctx.store.intents_for_event(event_id) if i["kind"] == "create")
-    while ctx.store.intents_for_event(event_id)[0]["state"] == "pending":
+    for _ in range(ops.MAX_ATTEMPTS):
         ops.execute_intent(ctx.store, ctx.providers, intent, "companion")
-    return ctx.store.intents_for_event(event_id)[0]
+    ctx.store.settle_intent(intent["id"], "failed", {"kind":"network", "error":"legacy exhausted retry fixture"})
+    ctx.store.update_event(event_id, {"sync_state":"failed"})
+    return next(i for i in ctx.store.intents_for_event(event_id) if i["id"] == intent["id"])
 
 
 def sync(ctx, calendar_id, cursor=""):
@@ -463,6 +474,12 @@ class MovedCaldavOccurrenceCancellationTests(unittest.TestCase):
         server.edit(href, lambda cal: None)
         sync(ctx, calendar_id)
         self.assertEqual([e["start"][:16] for e in self._visible_on(ctx, later)], [(later + timedelta(hours=1)).isoformat()[:16]])
+        run_open_intents(ctx)
+        exception = next(e for e in ctx.store.exceptions_for(master_id) if e['recurrence_id'] == iso_utc(later))
+        self.assertEqual(exception['sync_state'], 'conflict')  # an external ETag change cannot silently rebase an offline edit
+        info = json.loads(tools.cal_events(ctx, id=exception['id']))['event']['conflict']
+        self.assertEqual(json.loads(tools.cal_update(ctx, id=exception['id'], resolution='local',
+                         resolution_token=info['resolution_token'], confirm=True))['status'], 'pending')
         run_open_intents(ctx)
         self.assertEqual(server.resources[href][0].count("RECURRENCE-ID"), 2)
 

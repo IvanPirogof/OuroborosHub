@@ -58,12 +58,14 @@ CREATE TABLE IF NOT EXISTS intents (
     lease_until TEXT, lease_owner TEXT NOT NULL DEFAULT '', result_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_intents_state ON intents(state, next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_intents_event ON intents(event_id);
 CREATE TABLE IF NOT EXISTS reminders (
     id TEXT PRIMARY KEY, event_id TEXT NOT NULL, occurrence_start_utc TEXT NOT NULL,
     recurrence_id TEXT NOT NULL DEFAULT '', offset_min INTEGER NOT NULL,
     fire_at_utc TEXT NOT NULL, notice_id TEXT NOT NULL UNIQUE, state TEXT NOT NULL DEFAULT 'scheduled',
     sent_at TEXT, detail TEXT NOT NULL DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_reminders_fire ON reminders(state, fire_at_utc);
+CREATE INDEX IF NOT EXISTS idx_reminders_event ON reminders(event_id, occurrence_start_utc, offset_min);
 CREATE TABLE IF NOT EXISTS sync_state (
     calendar_id TEXT PRIMARY KEY, cursor TEXT NOT NULL DEFAULT '', cursor_kind TEXT NOT NULL DEFAULT '',
     window_start TEXT, window_end TEXT, last_ok_at TEXT, last_error TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL);
@@ -353,7 +355,7 @@ class Store:
         data["updated_at"] = _ts()
         sets = ", ".join(
             "sync_state=CASE WHEN sync_state='pending_delete' OR"
-            " (SELECT kind FROM intents WHERE event_id=:id ORDER BY created_at DESC, id DESC LIMIT 1)='delete'"
+            " (SELECT kind FROM intents WHERE event_id=:id AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1)='delete'"
             " THEN 'pending_delete' ELSE :sync_state END"
             if k == "sync_state" and data[k] == "synced" else f"{k}=:{k}"
             for k in data
@@ -362,13 +364,47 @@ class Store:
         with self._conn() as c:
             c.execute(f"UPDATE events SET {sets} WHERE id=:id", data)
 
+    def apply_provider_snapshot(self, event_id: str, fields: Dict[str, Any]) -> bool:
+        """A sync observation cannot overwrite a still-unconfirmed owner write.
+
+        The intent check and snapshot write share one transaction, including the
+        interval where an older write ACK has set the display state to synced.
+        """
+        data = {k: v for k, v in fields.items() if k in EVENT_COLUMNS and k != "id"}
+        with self._conn() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row = c.execute("SELECT sync_state FROM events WHERE id=?", (event_id,)).fetchone()
+            active = c.execute("SELECT 1 FROM intents WHERE event_id=? AND state IN ('pending','conflict') LIMIT 1", (event_id,)).fetchone()
+            last = c.execute("SELECT state FROM intents WHERE event_id=? ORDER BY rowid DESC LIMIT 1", (event_id,)).fetchone()
+            if row is None or row[0] in ("pending", "pending_delete", "conflict", "failed") or active or (last and last[0] == "failed"):
+                return False
+            data.update(updated_at=_ts(), deleted_at=None)
+            sets = ", ".join(f"{key}=?" for key in data)
+            c.execute(f"UPDATE events SET {sets} WHERE id=?", (*data.values(), event_id))
+        return True
+
+    def advance_resource_etag(self, master_id: str, previous: str, current: str) -> None:
+        """Carry known conditional CalDAV writes to queued sibling resource writes.
+
+        Only a receipt of our own write may advance a matching expected version;
+        importing a provider observation must never rebase an owner's intent.
+        """
+        if not previous or not current:
+            return
+        with self._conn() as c:
+            c.execute('BEGIN IMMEDIATE')
+            c.execute("UPDATE events SET etag=? WHERE id=? AND etag=?", (current, master_id, previous))
+            c.execute("UPDATE intents SET expected_etag=? WHERE state='pending' AND expected_etag=? "
+                      "AND event_id IN (SELECT id FROM events WHERE id=? OR master_id=?)",
+                      (current, previous, master_id, master_id))
+
     def record_created_event(self, event_id: str, result: Dict[str, Any]) -> None:
         """Publish the provider identity without overwriting a concurrent deletion request."""
         with self._conn() as c:
             c.execute("BEGIN IMMEDIATE")
             c.execute("UPDATE events SET external_id=?, href=?, etag=?, updated_at=?,"
                       " sync_state=CASE WHEN sync_state='pending_delete' OR"
-                      " (SELECT kind FROM intents WHERE event_id=? ORDER BY created_at DESC, id DESC LIMIT 1)='delete'"
+                      " (SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1)='delete'"
                       " THEN 'pending_delete' ELSE 'synced' END WHERE id=?",
                       (result.get("external_id") or "", result.get("href") or "", result.get("etag") or "",
                        _ts(), event_id, event_id))
@@ -392,7 +428,7 @@ class Store:
                             (identity.get("external_id") or "", identity.get("href") or "", identity.get("etag") or "", _ts(), event_id))
             if cur.rowcount != 1:
                 return False
-            latest = c.execute("SELECT id, kind, state FROM intents WHERE event_id=? ORDER BY created_at DESC, id DESC LIMIT 1",
+            latest = c.execute("SELECT id, kind, state FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1",
                                (event_id,)).fetchone()
             if latest is not None and latest["kind"] == "delete" and latest["state"] == "conflict":
                 c.execute("UPDATE intents SET state=?, result_json=?, lease_until=NULL, lease_owner='', next_attempt_at=?, updated_at=? WHERE id=?",
@@ -419,7 +455,7 @@ class Store:
             c.execute("BEGIN IMMEDIATE")
             removed = c.execute("DELETE FROM events WHERE id=? AND"
                                 " (sync_state='pending_delete' OR (sync_state='conflict' AND"
-                                " (SELECT kind FROM intents WHERE event_id=? ORDER BY created_at DESC, id DESC LIMIT 1)='delete'))"
+                                " (SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1)='delete'))"
                                 " AND NOT EXISTS (SELECT 1 FROM intents WHERE event_id=? AND kind='create' AND state!=?)",
                                 (event_id, event_id, event_id, INTENT_DONE))
             if not removed.rowcount:
@@ -566,7 +602,7 @@ class Store:
     def delete_requested(self, event_id: str) -> bool:
         """Only the latest command's delete survives adapter failure; a later owner edit supersedes it."""
         with self._conn() as c:
-            row = c.execute("SELECT kind FROM intents WHERE event_id=? ORDER BY created_at DESC, id DESC LIMIT 1",
+            row = c.execute("SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1",
                             (event_id,)).fetchone()
         return row is not None and row["kind"] == "delete"
 
@@ -600,7 +636,7 @@ class Store:
                             (event_id, occurrence_start_utc, offset_min)).fetchone()
         return row is not None
 
-    def retire_legacy_waiting_series_reminders(self) -> None:
+    def retire_legacy_waiting_series_reminders(self, except_events: Iterable[str] = ()) -> None:
         """Replace identity-less recurring queue entries before planning their replacements.
 
         A concurrent send reservation wins or loses this one SQLite write: when
@@ -609,8 +645,12 @@ class Store:
         retain their unchanged notice IDs.
         """
         with self._conn() as c:
-            c.execute("DELETE FROM reminders WHERE recurrence_id='' AND state IN ('scheduled', 'no_channel')"
-                      " AND event_id IN (SELECT id FROM events WHERE rrule != '')")
+            skipped = list(except_events)
+            sql = ("DELETE FROM reminders WHERE recurrence_id='' AND state IN ('scheduled', 'no_channel')"
+                   " AND event_id IN (SELECT id FROM events WHERE rrule != '')")
+            if skipped:
+                sql += " AND event_id NOT IN (" + ",".join("?" for _ in skipped) + ")"
+            c.execute(sql, skipped)
 
     def settled_reminders_for_split(self, event_id: str, first_original: str) -> List[Dict[str, Any]]:
         """Terminal history candidates; legacy rows lack the original slot, so the caller resolves them against exceptions."""
@@ -683,13 +723,14 @@ class Store:
             c.execute("UPDATE reminders SET state=?, detail=?, sent_at=CASE WHEN ?='sent' THEN ? ELSE sent_at END, updated_at=? WHERE id=?",
                       (state, detail[:500], state, ts, ts, reminder_id))
 
-    def withdraw_waiting_reminders(self, after: datetime, until: datetime, keep: Set[str]) -> int:
+    def withdraw_waiting_reminders(self, after: datetime, until: datetime, keep: Set[str], keep_events: Iterable[str] = ()) -> int:
         """Delete not-yet-attempted rows due in (after, until] whose notice the current plan no longer wants."""
         with self._conn() as c:
             c.execute("BEGIN IMMEDIATE")
-            rows = c.execute("SELECT id, notice_id FROM reminders WHERE state IN ('scheduled', 'no_channel') AND fire_at_utc > ? AND fire_at_utc <= ?",
+            rows = c.execute("SELECT id, notice_id, event_id FROM reminders WHERE state IN ('scheduled', 'no_channel') AND fire_at_utc > ? AND fire_at_utc <= ?",
                              (iso_utc(after), iso_utc(until))).fetchall()
-            stale = [r["id"] for r in rows if r["notice_id"] not in keep]
+            protected = set(keep_events)
+            stale = [r["id"] for r in rows if r["notice_id"] not in keep and r["event_id"] not in protected]
             for reminder_id in stale:
                 c.execute("DELETE FROM reminders WHERE id=? AND state IN ('scheduled', 'no_channel')", (reminder_id,))
             c.execute("COMMIT")

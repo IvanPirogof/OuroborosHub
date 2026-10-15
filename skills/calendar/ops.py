@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from model import (
     AVAIL_BUSY, AVAIL_FREE, AVAIL_SOFT, BUSY_COPY_TITLE, INTENT_CONFLICT, INTENT_DONE, INTENT_FAILED, INTENT_PENDING,
     PROVIDER_LOCAL, PUBLISH_BUSY, PUBLISH_FULL, SCOPES, SCOPE_ALL, SCOPE_FOLLOWING, SCOPE_THIS, VISIBILITY_SHOWN,
-    iso_utc, new_id, new_uid, overlaps, own_reminders, parse_stored, reminders_to_json,
+    get_tz, iso_utc, new_id, new_uid, overlaps, own_reminders, parse_stored, reminders_to_json,
 )
 
 RETRY_BACKOFF_SEC = (30, 120, 600, 1800, 7200)
@@ -80,7 +80,7 @@ def resolve_occurrence(store, row: Dict[str, Any], occ_key: str) -> Tuple[Dict[s
 
 
 def expand(rows: Sequence[Dict[str, Any]], start: datetime, end: datetime, exceptions_for: Callable[[str], List[Dict[str, Any]]],
-           owner_tz=None, strict: bool = False) -> List[Dict[str, Any]]:
+           owner_tz=None, strict: bool = False, failed: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
     """Turn stored rows into concrete occurrences inside [start, end).
 
     A local «обычно» (soft) routine follows the owner's CURRENT zone (16 A), everything else keeps its own zone.
@@ -105,9 +105,51 @@ def expand(rows: Sequence[Dict[str, Any]], start: datetime, end: datetime, excep
                 out.append(dict(row))
             continue
         follow_owner = owner_tz is not None and row.get("availability") == AVAIL_SOFT and row.get("origin", "local") == "local"
-        out.extend(_expand_master(row, start, end, exceptions_for(row["id"]), owner_tz if follow_owner else None, strict=strict))
+        try:
+            out.extend(_expand_master(row, start, end, exceptions_for(row["id"]), owner_tz if follow_owner else None, strict=strict))
+        except Exception as exc:
+            if failed is None:
+                raise
+            failed[row["id"]] = f"{type(exc).__name__}: {exc}"
     out.sort(key=lambda r: (r.get("start_utc") or "", r.get("title") or ""))
     return out
+
+
+def _parser_rule(rule_text: str, tz) -> str:
+    """Normalize floating UNTIL for the parser, without rewriting provider text."""
+    parts = rule_text.split(";")
+    for index, part in enumerate(parts):
+        if not part.upper().startswith("UNTIL="):
+            continue
+        value = part.split("=", 1)[1].strip()
+        if len(value) == 8:
+            until = datetime.combine(datetime.strptime(value, "%Y%m%d").date() + timedelta(days=1),
+                                     datetime.min.time(), tzinfo=tz) - timedelta(seconds=1)
+        elif len(value) == 15 and value[8].upper() == "T":
+            until = datetime.strptime(value.upper(), "%Y%m%dT%H%M%S").replace(tzinfo=tz)
+        else:
+            continue
+        parts[index] = "UNTIL=" + until.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return ";".join(parts)
+
+
+def validate_rrule(rule: Any, start_utc: str, zone: str) -> str:
+    """Validate a user rule before any write; missing parser is not validation."""
+    from dateutil.rrule import rrulestr
+    text = str(rule or "").strip()
+    if text[:6].upper() == "RRULE:":
+        text = text[6:].strip()
+    if not text:
+        return ""
+    if any(c in text for c in ":\r\n"):
+        raise ValueError("rrule: требуется одно RRULE без дополнительных строк")
+    try:
+        tz = get_tz(zone)
+        start = parse_stored(start_utc).astimezone(tz)
+        rrulestr(_parser_rule(text, tz), dtstart=start, forceset=True)
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+        raise ValueError(f"rrule не разобрано: {exc}; пример FREQ=WEEKLY;BYDAY=MO,WE") from exc
+    return text
 
 
 def _expand_master(master: Dict[str, Any], start: datetime, end: datetime, exceptions: List[Dict[str, Any]],
@@ -133,19 +175,7 @@ def _expand_master(master: Dict[str, Any], start: datetime, end: datetime, excep
             # keep the wall-clock time of the routine in the owner's current zone
             local_src = m_start.astimezone(get_tz(master.get("tz") or ""))
             dtstart = local_src.replace(tzinfo=tz)
-        rule_text = str(master["rrule"])
-        if master.get("all_day"):
-            # RFC all-day RRULE may use a DATE UNTIL. dateutil compares it
-            # against an aware DTSTART and rejects the naive value; normalize
-            # only the local parser copy, not the provider's DATE contract.
-            parts = rule_text.split(";")
-            for index, part in enumerate(parts):
-                if part.upper().startswith("UNTIL=") and len(part.split("=", 1)[1]) == 8:
-                    until_day = datetime.strptime(part.split("=", 1)[1], "%Y%m%d").date()
-                    end_of_day = datetime.combine(until_day + timedelta(days=1), datetime.min.time(), tzinfo=tz) - timedelta(seconds=1)
-                    parts[index] = "UNTIL=" + end_of_day.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            rule_text = ";".join(parts)
-        rule = rrulestr(rule_text, dtstart=dtstart, forceset=True)
+        rule = rrulestr(_parser_rule(str(master["rrule"]), tz), dtstart=dtstart, forceset=True)
         for ex in _split_dates(master.get("exdates")):
             rule.exdate(ex.astimezone(tz))
         for rd in _split_dates(master.get("rdates")):
@@ -355,6 +385,14 @@ def update_event(store, providers, event_id: str, changes: Dict[str, Any], scope
     if scope == SCOPE_FOLLOWING and not occ_key:
         raise ValueError("scope=following needs an occurrence id")
     changes = _shift_for_scope_all(store, row, occ_key, scope, changes)
+    if changes.get("all_day"):
+        zone = get_tz(changes.get("tz") or row.get("tz") or "")
+        first = parse_stored(changes.get("start_utc") or occ_key or row["start_utc"]).astimezone(zone)
+        last = parse_stored(changes.get("end_utc") or row["end_utc"]).astimezone(zone)
+        first = first.replace(hour=0, minute=0, second=0, microsecond=0)
+        midnight = last.replace(hour=0, minute=0, second=0, microsecond=0)
+        last = midnight + timedelta(days=1) if midnight != last else midnight
+        changes = {**changes, "start_utc": iso_utc(first), "end_utc": iso_utc(max(last, first + timedelta(days=1)))}
     op_id = new_id("op")
     members = [row] + [m for m in _group_masters(store, row) if m["id"] != row["id"]]
     assignments: List[Dict[str, Any]] = []
@@ -421,7 +459,8 @@ def update_event(store, providers, event_id: str, changes: Dict[str, Any], scope
             if kind == "rsvp":
                 payload.update({"response": changes.get("my_response"), "notify_organizer": bool(send_updates)})
             current = store.get_event(target["id"]) or target
-            intent = store.add_intent(kind, cal["account_id"], cal["id"], target["id"], payload, scope=scope, expected_etag=current.get("etag") or "", op_id=op_id)
+            resource = store.get_event(current['master_id']) if current.get('master_id') and cal['provider'] == 'yandex' else current
+            intent = store.add_intent(kind, cal["account_id"], cal["id"], target["id"], payload, scope=scope, expected_etag=(resource or current).get("etag") or "", op_id=op_id)
             outcome = execute_intent(store, providers, intent, owner)
             if result.get("status") == INTENT_DONE:
                 result = outcome     # the first non-done outcome is the one worth reporting
@@ -508,6 +547,13 @@ def _apply_changes(store, row: Dict[str, Any], changes: Dict[str, Any]) -> None:
             store.drop_reminders_for_occurrence(row["master_id"], str(row.get("start_utc") or ""))
     if fields:
         store.update_event(row["id"], fields)
+        if row.get("rrule") and fields.get("rrule") == "" and not row.get("master_id"):
+            from reminders import notice_id_for
+            start_key = str(fields.get("start_utc") or row["start_utc"])
+            for previous in store.settled_reminders_for_split(row["id"], ""):
+                if previous["recurrence_id"] and previous["occurrence_start_utc"] == start_key:
+                    store.carry_settled_reminder(previous, row["id"], start_key, "", previous["fire_at_utc"],
+                        notice_id_for(row["id"], start_key, previous["offset_min"]))
         if any(k in fields for k in ("start_utc", "end_utc", "status", "rrule")) and not row.get("master_id"):
             # a moved single event: its queue is replanned; for an exception the queue row stays and is re-read at delivery
             store.drop_reminders_for(row["id"])
@@ -527,6 +573,14 @@ def _read_only_preflight(store, rows: List[Dict[str, Any]], assignments: List[Di
     """Read-only external calendars are refused before any local mutation; returns the ids that must be skipped."""
     blocked = set()
     for target in rows:
+        disputed = next((r for r in [target] + store.exceptions_for(target['id'])
+                         if r.get('sync_state') == 'conflict'
+                         or any(i['state'] == INTENT_CONFLICT for i in store.intents_for_event(r['id']))), None)
+        if disputed:
+            blocked.add(target['id'])
+            assignments.append({'calendar_id': target['calendar_id'], 'event_id': disputed['id'],
+                                'status': INTENT_CONFLICT, 'message': 'сначала cal_events(id=' + disputed['id'] + '), затем выбор local/provider'})
+            continue
         cal = store.get_calendar(target["calendar_id"])
         if cal is not None and cal["provider"] != PROVIDER_LOCAL and not cal.get("writable", True):
             blocked.add(target["id"])
@@ -918,6 +972,13 @@ def run_leased_intent(store, providers, intent: Dict[str, Any]) -> Dict[str, Any
                  "master_etag": (master or {}).get("etag") or ""}
     modes = store.get_setting("reminder_mode") or {}
     payload["mute_provider_reminders"] = bool(modes.get(str(cal["id"])))
+    expected = intent.get('expected_etag') or event.get('etag') or ''
+    predecessor = _predecessor(store, intent)
+    if predecessor and predecessor['state'] == INTENT_DONE:
+        previous = json.loads(predecessor.get('payload_json') or '{}')
+        if payload.get('op_id') and previous.get('op_id') == payload['op_id']:
+            expected = event.get('etag') or ''
+    payload['_expected_etag'] = expected
     try:
         if intent["kind"] == "create":
             res = adapter.create(cal, event, payload)
@@ -930,11 +991,11 @@ def run_leased_intent(store, providers, intent: Dict[str, Any]) -> Dict[str, Any
                 written = adapter.update(cal, {**event, **res}, res.get("etag") or "", {**payload, "send_updates": False})
                 store.record_created_event(event["id"], {**res, "etag": written.get("etag") or res.get("etag") or ""})
         elif intent["kind"] == "update":
-            res = adapter.update(cal, event, intent.get("expected_etag") or "", payload)
+            res = adapter.update(cal, event, expected, payload)
             store.update_event(event["id"], {"etag": res.get("etag") or event.get("etag") or "", "sync_state": "synced",
                                              **({"external_id": res["external_id"]} if res.get("external_id") else {})})
-            if event.get("master_id") and res.get("master_etag"):
-                store.update_event(event["master_id"], {"etag": res["master_etag"]})   # CalDAV: the exception lives in the master's resource
+            if cal['provider'] == 'yandex':
+                store.advance_resource_etag(event.get('master_id') or event['id'], expected, res.get('master_etag') or res.get('etag') or '')
         elif intent["kind"] == "delete":
             if not event.get("external_id") and not event.get("href"):
                 creates = [i for i in store.intents_for_event(event["id"]) if i["kind"] == "create"]
@@ -970,14 +1031,16 @@ def run_leased_intent(store, providers, intent: Dict[str, Any]) -> Dict[str, Any
                         return {"status": INTENT_DONE, "message": "у провайдера события нет, локальная запись удалена"}
                     store.record_created_event(event["id"], found)   # the tombstone stays: deletion is still requested
                     event = {**event, **found}
-                    intent = {**intent, "expected_etag": found.get("etag") or ""}
-            adapter.delete(cal, event, intent.get("expected_etag") or "", payload)
+                    expected = found.get('etag') or ''
+            adapter.delete(cal, event, expected, payload)
             store.delete_event(event["id"], hard=True)
         elif intent["kind"] == "rsvp":
             if not event.get("external_id") and not event.get("href") and not event.get("master_external_id") and not event.get("master_href"):
                 return _defer(store, intent, "ответ отправится после записи события у провайдера", kind="retry")
             res = adapter.respond(cal, event, payload)
             store.update_event(event["id"], {"etag": res.get("etag") or event.get("etag") or "", "sync_state": "synced"})
+            if cal['provider'] == 'yandex':
+                store.advance_resource_etag(event.get('master_id') or event['id'], expected, res.get('master_etag') or res.get('etag') or '')
         else:
             store.settle_intent(intent["id"], INTENT_FAILED, {"error": f"unknown intent kind {intent['kind']}"})
             return {"status": INTENT_FAILED, "message": "неизвестная операция"}
@@ -1009,11 +1072,11 @@ def run_leased_intent(store, providers, intent: Dict[str, Any]) -> Dict[str, Any
 
 def _defer(store, intent: Dict[str, Any], message: str, kind: str = "network") -> Dict[str, Any]:
     attempts = int(intent.get("attempts") or 1)
-    if attempts >= MAX_ATTEMPTS:
+    if kind == "retry" and attempts >= MAX_ATTEMPTS:
         store.settle_intent(intent["id"], INTENT_FAILED, {"error": message, "kind": kind, "attempts": attempts})
         store.update_event(intent["event_id"], {"sync_state": "pending_delete" if intent["kind"] == "delete" else "failed"})
         return {"status": INTENT_FAILED, "message": f"{message} (попытки исчерпаны)"}
-    delay = RETRY_BACKOFF_SEC[min(attempts, len(RETRY_BACKOFF_SEC)) - 1]
+    delay = RETRY_BACKOFF_SEC[min(max(attempts, 1), len(RETRY_BACKOFF_SEC)) - 1]
     store.settle_intent(intent["id"], INTENT_PENDING, {"error": message, "kind": kind}, retry_in_sec=delay)
     return {"status": INTENT_PENDING, "message": f"{message}; повтор через {delay} с"}
 

@@ -67,6 +67,28 @@ class AvailabilityTests(unittest.TestCase):
                 sync(ctx, calendar_id)
                 self.assertEqual(json.loads(ctx.store.get_event(event_id)["attendees_json"]), [])
 
+    def test_google_unrelated_edit_and_rsvp_preserve_guest_metadata(self):
+        ctx, calendar_id, server = google_context()
+        self.keep(ctx)
+        created = json.loads(tools.cal_create(ctx, title="Roundtrip", start=_day(4).isoformat(),
+            calendars=[calendar_id], attendees=[{"email":"guest@example.test"}], confirm=True))
+        row_id = created["event"]["id"]
+        remote = server.live()[0]
+        guests = [{"email":"guest@example.test", "displayName":"Guest", "optional":True,
+                   "comment":"Arrive late", "additionalGuests":2, "responseStatus":"tentative"},
+                  {"email":"owner@example.test", "self":True, "responseStatus":"needsAction"}]
+        remote["attendees"] = guests
+        remote["etag"] = server._etag()
+        sync(ctx, calendar_id)
+        changed = json.loads(tools.cal_update(ctx, id=row_id, title="Rename only", confirm=True))
+        self.assertEqual(changed["status"], "updated")
+        self.assertEqual(remote["attendees"], guests)
+        self.assertNotIn("attendees", [c for c in server.calls if c[0] == "PATCH"][-1][3])
+        answered = json.loads(tools.cal_update(ctx, id=row_id, response="accepted", confirm=True))
+        self.assertEqual(answered["status"], "updated")
+        self.assertEqual(remote["attendees"][0], guests[0])
+        self.assertEqual(remote["attendees"][1]["responseStatus"], "accepted")
+
     def ics(self, transp="TRANSPARENT"):
         start = _day(5)
         prop = "" if transp is None else f"TRANSP:{transp}\r\n"

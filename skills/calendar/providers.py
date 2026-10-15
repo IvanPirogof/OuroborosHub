@@ -537,7 +537,7 @@ class YandexAdapter:
 
     def update(self, calendar: Dict[str, Any], event: Dict[str, Any], expected_etag: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         if event.get("master_id"):
-            return self._write_exception(event, payload)
+            return self._write_exception(event, payload, expected_etag)
         href = str(event.get("href") or "")
         if not href:
             return self.create(calendar, event, payload)
@@ -570,6 +570,27 @@ class YandexAdapter:
             return
         self._request("DELETE", href, None, {"If-Match": expected_etag} if expected_etag else {})
 
+    def read_current(self, calendar, event, payload=None):
+        href = event.get('master_href') if event.get('master_id') else event.get('href')
+        if not href:
+            raise ProviderError('not_found', 'у события нет адреса провайдера', 404)
+        text, etag = self.get(href)
+        rows = ics_to_rows(text, calendar['id'], href, etag, get_tz(event.get('tz') or ''))
+        key = event.get('recurrence_id') or ''
+        row = next((r for r in rows if r.get('recurrence_id', '') == key), None)
+        if row is None and key:
+            master = next((r for r in rows if not r.get('recurrence_id')), None)
+            if master and master.get('rrule'):
+                from ops import _expand_master
+                start = parse_stored(key)
+                exceptions = [{**r, 'id': r['recurrence_id']} for r in rows if r.get('recurrence_id')]
+                expanded = _expand_master({**master, 'id': 'provider-master'}, start,
+                                          start + timedelta(days=2), exceptions, strict=True)
+                row = next((r for r in expanded if r.get('occurrence_start_utc') == key), None)
+                if row:
+                    row = {**row, 'rrule': '', 'rdates': '', 'exdates': '', 'recurrence_id': key, 'raw_payload': ''}
+        return {'event': row, 'etag': etag}
+
     def respond(self, calendar: Dict[str, Any], event: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
         """RSVP the CalDAV way: rewrite our own ATTENDEE PARTSTAT in the resource. Whether Yandex notifies the organizer
         from that is the server's business (probe on a test calendar); we do not claim a sent reply."""
@@ -577,10 +598,11 @@ class YandexAdapter:
         mapping = {"accepted": "accepted", "declined": "declined", "tentative": "tentative"}
         if response not in mapping:
             raise ProviderError("unsupported", "response: accepted | declined | tentative")
-        try:
-            attendees = json.loads(event.get("attendees_json") or "[]")
-        except ValueError:
-            attendees = []
+        current = self.read_current(calendar, event, payload)
+        expected = payload.get('_expected_etag') or current['etag']
+        if not current['event'] or not expected or current['etag'] != expected:
+            raise ProviderError('conflict', 'приглашение изменилось на сервере', 412)
+        attendees = json.loads(current['event'].get('attendees_json') or '[]')
         me = self.login.lower()
         hit = False
         for att in attendees:
@@ -589,16 +611,17 @@ class YandexAdapter:
                 hit = True
         if not hit:
             raise ProviderError("unsupported", "среди участников события нет этого аккаунта — ответить нечем")
-        return self.update(calendar, {**event, "attendees_json": json.dumps(attendees, ensure_ascii=False)}, str(event.get("etag") or ""), payload)
+        return self.update(calendar, {**event, **current['event'], 'master_id': event.get('master_id') or '',
+                                      'attendees_json': json.dumps(attendees, ensure_ascii=False)}, expected, payload)
 
-    def _write_exception(self, event: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _write_exception(self, event: Dict[str, Any], payload: Dict[str, Any], expected_etag: str = '') -> Dict[str, Any]:
         """One changed/cancelled date of a series lives INSIDE the master's .ics: cancelled → EXDATE on the master,
         changed → a VEVENT with RECURRENCE-ID next to it. The whole resource is PUT back under If-Match."""
         href = str(event.get("master_href") or event.get("href") or "")
         if not href:
             raise ProviderError("retry", "серия ещё не записана на сервер — исключение подождёт её")
         text, etag = self.get(href)
-        cached = str(event.get("master_etag") or "")
+        cached = str(expected_etag or event.get("master_etag") or "")
         if cached and etag and cached != etag:
             raise ProviderError("conflict", "серия изменилась на сервере с момента последней синхронизации")
         icalendar = _ical()

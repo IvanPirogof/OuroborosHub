@@ -71,7 +71,7 @@ def load_tokens(state_dir: str, passphrase: str) -> Dict[str, Dict[str, Any]]:
     try:
         return json.loads(f.decrypt(blob).decode("utf-8"))
     except Exception:
-        raise ProviderError("auth", "не удалось расшифровать токены Google: CALENDAR_TOKEN_KEY изменился? Переподключи аккаунты")
+        raise ProviderError("auth", "не удалось расшифровать токены Google: восстанови прежний CALENDAR_TOKEN_KEY. Если ключ утрачен, сначала сохрани google_tokens.enc и google_tokens.salt из каталога состояния навыка отдельно, затем убери только эти файлы и подключи все Google-аккаунты заново; обычное переподключение не прочитает старое хранилище")
 
 
 def save_tokens(state_dir: str, passphrase: str, tokens: Dict[str, Dict[str, Any]]) -> None:
@@ -328,6 +328,16 @@ class GoogleAdapter:
                 break
         return rows, next_sync, "google_sync_token", cancelled
 
+    def exists_event(self, calendar: Dict[str, Any], external_id: str) -> bool:
+        """Confirm deletion separately from absence in a time-bounded initial feed."""
+        try:
+            _, _, item = self._request("GET", f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/{urllib.parse.quote(external_id, safe='')}")
+        except ProviderError as exc:
+            if exc.kind in ("not_found", "gone"):
+                return False
+            raise
+        return item.get("status") != "cancelled"
+
     def create(self, calendar: Dict[str, Any], event: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
         body = row_to_gevent(event, mute=bool(payload.get("mute_provider_reminders")))
         body["id"] = _google_id(event)
@@ -376,6 +386,10 @@ class GoogleAdapter:
         if not external_id:
             return self.create(calendar, event, payload)
         body = row_to_gevent(event, mute=bool(payload.get("mute_provider_reminders")))
+        if "attendees" not in (payload.get("changes") or {}):
+            # PATCH arrays replace the whole provider array. Unrelated edits must
+            # not rewrite guests from a potentially older local projection.
+            body.pop("attendees", None)
         if event.get("master_id") and "reminders" not in (payload.get("changes") or {}) and not payload.get("mute_provider_reminders"):
             # PATCH of a title-only occurrence must not turn inherited master reminders
             # into an explicit Google instance default (or overwrite an existing override).
@@ -398,6 +412,16 @@ class GoogleAdapter:
         self._request("DELETE", f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/{urllib.parse.quote(external_id, safe='')}",
                       {"sendUpdates": send}, None, headers)
 
+    def read_current(self, calendar, event, payload=None):
+        external_id = event.get('external_id') or self._instance_id(calendar, event, payload)
+        if not external_id:
+            raise ProviderError('not_found', 'экземпляр события не найден', 404)
+        path = (f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/"
+                f"{urllib.parse.quote(external_id, safe='')}")
+        _, headers, data = self._request('GET', path)
+        row = gevent_to_row(data, calendar['id'], get_tz(event.get('tz') or ''))
+        return {'event': row, 'etag': str(data.get('etag') or headers.get('etag') or '')}
+
     def respond(self, calendar: Dict[str, Any], event: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
         external_id = str(event.get("external_id") or "")
         response = str(payload.get("response") or event.get("my_response") or "")
@@ -409,7 +433,11 @@ class GoogleAdapter:
                 raise ProviderError("retry", "экземпляр серии у Google ещё не найден — ответ подождёт")
         if not external_id:
             raise ProviderError("unsupported", "ответить можно только на событие, уже записанное в Google")
-        attendees = json.loads(event.get("attendees_json") or "[]")
+        current = self.read_current(calendar, {**event, 'external_id': external_id}, payload)
+        expected = payload.get('_expected_etag') or current['etag']
+        if not current['event'] or not expected or current['etag'] != expected:
+            raise ProviderError('conflict', 'приглашение изменилось на сервере', 412)
+        attendees = json.loads(current['event'].get('attendees_json') or '[]')
         hit = False
         for att in attendees:
             if att.get("self") or str(att.get("email") or "").lower() == self.email.lower():
@@ -417,9 +445,9 @@ class GoogleAdapter:
                 hit = True
         if not hit:
             raise ProviderError("unsupported", "среди участников события нет этого аккаунта — ответить нечем")
-        body = {"attendees": [{"email": a.get("email"), "responseStatus": a.get("responseStatus") or a.get("status") or "needsAction"} for a in attendees if a.get("email")]}
+        body = {"attendees": [_attendee_to_google(a) for a in attendees if a.get("email")]}
         params = {"sendUpdates": "all" if payload.get("notify_organizer") else "none"}
-        _, headers, data = self._request("PATCH", f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/{urllib.parse.quote(external_id, safe='')}", params, body)
+        _, headers, data = self._request("PATCH", f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/{urllib.parse.quote(external_id, safe='')}", params, body, {'If-Match': expected})
         return {"etag": str(data.get("etag") or headers.get("etag") or "")}
 
     def set_default_reminders(self, calendar: Dict[str, Any], overrides: List[Dict[str, Any]]) -> None:
@@ -499,7 +527,8 @@ def gevent_to_row(item: Dict[str, Any], calendar_id: str, default_tz) -> Optiona
             exdates = ",".join(filter(None, [exdates, _ical_dates(text, tz)]))
         elif text.startswith("RDATE"):
             rdates = ",".join(filter(None, [rdates, _ical_dates(text, tz)]))
-    attendees = [{"email": a.get("email", ""), "name": a.get("displayName", ""), "status": a.get("responseStatus", ""), "self": bool(a.get("self")),
+    attendees = [{**{k: a[k] for k in ("comment", "additionalGuests", "resource") if k in a},
+                  "email": a.get("email", ""), "name": a.get("displayName", ""), "status": a.get("responseStatus", ""), "self": bool(a.get("self")),
                   "role": "optional" if a.get("optional") else ""} for a in item.get("attendees") or []]
     my_response = next((a["status"] for a in attendees if a.get("self")), "")
     rem = item.get("reminders") or {}
@@ -550,6 +579,19 @@ def _ical_dates(line: str, tz) -> str:
             continue
         out.append(iso_utc(dt))
     return ",".join(out)
+
+
+def _attendee_to_google(attendee: Dict[str, Any]) -> Dict[str, Any]:
+    """Preserve writable guest metadata when an attendee-array change is intended."""
+    result = {k: attendee[k] for k in ("email", "comment", "additionalGuests", "resource") if k in attendee}
+    status = attendee.get("responseStatus") or attendee.get("status")
+    if status:
+        result["responseStatus"] = status
+    if attendee.get("name"):
+        result["displayName"] = attendee["name"]
+    if attendee.get("role") == "optional":
+        result["optional"] = True
+    return result
 
 
 def row_to_gevent(event: Dict[str, Any], mute: bool = False) -> Dict[str, Any]:
@@ -606,5 +648,5 @@ def row_to_gevent(event: Dict[str, Any], mute: bool = False) -> Dict[str, Any]:
         attendees = json.loads(event.get("attendees_json") or "[]")
     except ValueError:
         attendees = []
-    body["attendees"] = [{"email": a.get("email"), **({"responseStatus": a.get("status")} if a.get("status") else {})} for a in attendees if a.get("email")]
+    body["attendees"] = [_attendee_to_google(a) for a in attendees if a.get("email")]
     return body

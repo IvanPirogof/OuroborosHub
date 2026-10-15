@@ -334,6 +334,7 @@ class YandexExceptionWriteTests(unittest.TestCase):
         self.assertIn("RECURRENCE-ID;TZID=Europe/Moscow:20260930T190000", body)
         self.assertIn("SUMMARY:Серия (перенос)", body)
         cancelled = {**moved, "status": "cancelled"}
+        adapter.get = lambda href: (puts[-1][2], '"m2"')  # provider now exposes the acknowledged PUT
         adapter.update({}, cancelled, '"m2"', {})
         body2 = puts[-1][2]
         self.assertIn("EXDATE;TZID=Europe/Moscow:20260930T190000", body2)

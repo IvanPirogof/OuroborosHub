@@ -524,12 +524,24 @@ class ProviderIdentityRound2Tests(unittest.TestCase):
                 '{"email":"organizer@example.test","status":"accepted"}]'
             ),
         }
+        original_request = adapter._request
+        def with_live_invite(method, path, params=None, body=None, headers=None, _retry=True):
+            result = original_request(method, path, params, body, headers, _retry)
+            if method == 'GET':
+                return 200, {}, {'id':'invite-1', 'etag':'"e1"', 'start':{'dateTime':'2026-10-01T09:00:00Z'},
+                                 'end':{'dateTime':'2026-10-01T10:00:00Z'},
+                                 'attendees':[{'email':'owner@example.test','self':True,'responseStatus':'needsAction'},
+                                              {'email':'organizer@example.test','responseStatus':'accepted'}]}
+            return result
+        adapter._request = with_live_invite
         adapter.respond(
-            {"external_id": "primary"},
+            {"external_id": "primary", 'id':'g:primary'},
             event,
             {"response": "accepted", "notify_organizer": True},
         )
         method, _path, params, body, _headers = adapter.requests[-1]
+        self.assertEqual(_headers, {'If-Match':'"e1"'})
+        self.assertEqual(adapter.requests[0][0], 'GET')
         self.assertEqual((method, params), ("PATCH", {"sendUpdates": "all"}))
         own = next(attendee for attendee in body["attendees"] if attendee["email"] == "owner@example.test")
         self.assertEqual(own["responseStatus"], "accepted")
@@ -555,7 +567,8 @@ class ProviderIdentityRound2Tests(unittest.TestCase):
         adapter._request = lambda method, url, body=None, headers=None: (
             puts.append((method, url, body, headers)) or (204, {"etag": '"e2"'}, "")
         )
-        adapter.respond({}, event, {"response": "accepted"})
+        adapter.get = lambda href: (source, '"e1"')
+        adapter.respond({'id':event['calendar_id']}, event, {"response": "accepted"})
         written = puts[-1][2]
         self.assertIn("PARTSTAT=ACCEPTED", written)
         self.assertIn("ORGANIZER:mailto:organizer@example.test", written)

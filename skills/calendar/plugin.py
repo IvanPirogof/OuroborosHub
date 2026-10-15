@@ -26,8 +26,8 @@ TOOL_DESCRIPTIONS = {
     ),
     "cal_events": (
         "События за период (по умолчанию сегодня), уже развёрнутые повторения (≤50, есть next_offset). start/end — ISO 8601 "
-        "(без offset = местное время владельца). calendars — id/имена/алиасы/'yandex'/'google'/'local'. query — поиск. "
-        "include_hidden=true (по умолчанию) показывает и служебные события-распорядок. id — одно событие целиком с назначениями."
+        "(без offset = местное время владельца). calendars — явные id/имена; алиас или имя провайдера работает только при однозначном выборе. 'all' — default плюс набор публикации, не весь аккаунт. Без calendars читаются все. query — поиск. "
+        "include_hidden=true (по умолчанию) показывает и служебные события-распорядок. id — одно событие с назначениями; при конфликте читает текущую версию провайдера и возвращает local/provider и resolution_token."
     ),
     "cal_create": (
         "Создать событие владельца. calendars: '' — календарь по умолчанию; 'all'/'busy_set' — календарь по умолчанию плюс сохранённый набор "
@@ -41,7 +41,7 @@ TOOL_DESCRIPTIONS = {
         "напоминания (reminders: минуты до начала; [] — у этого события без напоминаний; 'default' — снова по общим правилам), участники, "
         "ответ на приглашение (response: accepted|declined|tentative), набор календарей (calendars — явная смена назначений). "
         "Для повторяющихся: id вхождения (…@дата) + scope=this — только эта дата; scope=all — всё расписание; scope=following — начиная "
-        "с этой даты. Если владелец не уточнил охват — спроси его. confirm=true обязателен."
+        "с этой даты. Если владелец не уточнил охват — спроси его. При конфликте сначала cal_events(id), покажи обе версии; после выбора resolution=local|provider и resolution_token из снимка без других правок. confirm=true обязателен."
     ),
     "cal_delete": (
         "Удалить событие (и его связанные копии в других календарях). Для повторяющихся — scope как у cal_update; при сомнении спроси "
@@ -82,6 +82,7 @@ SCHEMAS = {
         "hidden": {"type": "boolean"}, "availability": {"type": "string", "enum": ["busy", "free", "soft"]}, "calendars": {"type": "string"},
         "attendees": {"type": "array", "items": {"type": "string"}},
         "reminders": {"anyOf": [{"type": "array", "items": {"type": "integer"}}, {"type": "string", "enum": ["default"]}]},
+        "resolution": {"type": "string", "enum": ["local", "provider"]}, "resolution_token": {"type": "string"},
         "rrule": {"type": "string"}, "response": {"type": "string", "enum": ["accepted", "declined", "tentative"]},
         "scope": {"type": "string", "enum": ["this", "following", "all"], "default": "this"},
         "send_updates": {"type": "boolean", "default": False}, "confirm": {"type": "boolean", "default": False}}, "required": ["id", "confirm"]},

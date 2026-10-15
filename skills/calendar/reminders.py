@@ -91,6 +91,8 @@ def offsets_for(event: Dict[str, Any], rules: Dict[str, Any], modes: Optional[Di
     provider = str(event.get("provider") or "local")
     if provider != "local" and not (modes or {}).get(str(event.get("calendar_id"))):
         return []
+    if str(event.get("my_response") or "") == "declined":
+        return []
     own = own_reminders(event.get("reminders_json"))
     if own is not None:
         return _offsets(own)
@@ -119,7 +121,7 @@ def batch_notice_id(notice_ids: List[str]) -> str:
     return f"cal:batch:{digest}"
 
 
-def plan(store, occurrences_in: Any, now: Optional[datetime] = None) -> int:
+def plan(store, occurrences_in: Any, now: Optional[datetime] = None, held: Optional[Dict[str, str]] = None) -> int:
     """Schedule reminder rows for occurrences starting within the horizon. Idempotent by notice_id.
 
     The future part of the queue is then made to match: a waiting row this pass would not plan (offset removed,
@@ -132,7 +134,8 @@ def plan(store, occurrences_in: Any, now: Optional[datetime] = None) -> int:
     horizon_end = now + PLAN_HORIZON + timedelta(days=7)   # offsets up to 7 days look further ahead
     # Do not retire recoverable old waiting rows if occurrence enumeration fails.
     occurrences = list(occurrences_in(now - timedelta(hours=1), horizon_end))
-    store.retire_legacy_waiting_series_reminders()
+    held = held if held is not None else {}
+    store.retire_legacy_waiting_series_reminders(except_events=held)
     scheduled = 0
     wanted = set()
     for occ in occurrences:
@@ -159,31 +162,32 @@ def plan(store, occurrences_in: Any, now: Optional[datetime] = None) -> int:
                 continue  # no second push after an accepted/uncertain old-format send
             if store.schedule_reminder(event_id, occ_start, offset, iso_utc(fire_at), notice_id, recurrence_id):
                 scheduled += 1
-    store.withdraw_waiting_reminders(now, now + PLAN_HORIZON, keep=wanted)
+    store.withdraw_waiting_reminders(now, now + PLAN_HORIZON, keep=wanted, keep_events=held)
     return scheduled
 
 
 # ── delivery ────────────────────────────────────────────────────────
 
-try:  # the host's credential wrapper when the companion can import it; the same contract otherwise
-    from ouroboros.skill_token import SkillToken as _SkillToken  # type: ignore
-except Exception:  # pragma: no cover - companion env without the core package
-    class _SkillToken:
-        """Refuses accidental stringification; the value is revealed only at the request-construction site."""
+class _SkillToken:
+    """Companion-local opaque credential; no dependency on an importable core.
 
-        def __init__(self, value: str):
-            token = str(value or "").strip()
-            if not token:
-                raise ValueError("SkillToken cannot be empty")
-            self._value = token
+    Reveal only at the request-construction site. The standalone companion and
+    in-process route have identical stringification behavior on every install.
+    """
 
-        def use_in_request(self) -> str:
-            return self._value
+    def __init__(self, value: str):
+        token = str(value or '').strip()
+        if not token:
+            raise ValueError('SkillToken cannot be empty')
+        self._value = token
 
-        def __repr__(self) -> str:
-            return "<SkillToken redacted>"
+    def use_in_request(self) -> str:
+        return self._value
 
-        __str__ = __repr__
+    def __repr__(self) -> str:
+        return '<SkillToken redacted>'
+
+    __str__ = __repr__
 
 
 class NotifyChannel:
