@@ -61,6 +61,22 @@ Access token обновляется автоматически через refres
 | `whoop_summary` | Сводка за последние N дней: recovery, сон, strain. |
 | `whoop_fetch` | Детальные данные по типу: RECOVERY, SLEEP, WORKOUT, CYCLE. |
 
+## Recovery zones
+
+`whoop_fetch(RECOVERY)` adds `score.recovery_zone` to scored records;
+`whoop_summary` returns the same derived value as `recovery.recovery_zone`.
+The original `recovery_score` and other measurements are preserved.
+For percentages in 0–100, the classifier uses red ≤33, yellow >33 and ≤66,
+and green >66 (the existing PR's numeric cutoffs, without rounding).
+WHOOP describes the displayed bands as [red 0–33%, yellow 34–66%, green 67–100%](https://developer.whoop.com/docs/whoop-101);
+its [API](https://developer.whoop.com/api) defines the score as a floating-point
+percentage. The fractional convention above is explicit; WHOOP's displayed
+integer bands do not specify rounding between them.
+Missing, non-numeric, non-finite or out-of-range values produce `null`, not an
+assumed color. Unscored records retain their missing/null `score`; summary
+measurements are `null` when their score is unavailable. An empty collection
+still omits its section. These are WHOOP data categories, not medical advice.
+
 ## Данные и права
 
 - Запросы идут только к `api.prod.whoop.com`; данные никуда, кроме ответа

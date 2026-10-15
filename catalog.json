@@ -2089,18 +2089,18 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "93d180cc058d4146d51651fbc0c3f7a48f85fa44afc9f2f23c500734924fe763",
-          "size": 3822
+          "sha256": "fa0bd301249acdc4b2b712f0502b42ce9a7eed8de4409e84dd5d3f8ccce04253",
+          "size": 4855
         },
         {
           "path": "plugin.py",
-          "sha256": "4eec56111a90cf5eb9cec2a8a86e79ec65f9152e01a142d37e62a39e074497da",
-          "size": 12294
+          "sha256": "53d0f5b0146e9b764333589bd17463dd8c2e3d78d1f3fa9fd3dee6b4f7822a00",
+          "size": 12446
         },
         {
           "path": "whoop_client.py",
-          "sha256": "cc5e83a2e73077374d56cb7f9710e9a40c329d8a25a050b30ce365f106730547",
-          "size": 14337
+          "sha256": "6fe74bea0c23045af088fc77f5daea5be3e1508796c58e2ea16d70f84c7f5204",
+          "size": 14456
         }
       ],
       "name": "whoop-health",

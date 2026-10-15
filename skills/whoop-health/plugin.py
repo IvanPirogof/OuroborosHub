@@ -239,8 +239,9 @@ def register(api):
         description=(
             "Сводка WHOOP за последние N дней: recovery (HRV, resting HR, "
             "SpO2), сон (стадии, performance), strain (нагрузка, HR). "
-            "recovery_zone уже вычислен: red 1–33, yellow 34–66, "
-            "green 67–100 — бери как есть, не пересчитывай по памяти."
+            "recovery_zone уже вычислен для числового процента 0–100: "
+            "red ≤33, yellow >33 и ≤66, green >66. "
+            "null означает, что зона неизвестна; не угадывай её."
         ),
         schema={
             "type": "object",
@@ -300,8 +301,9 @@ def register(api):
         description=(
             "Детальные данные WHOOP по типу: RECOVERY, SLEEP, WORKOUT, CYCLE. "
             "Возвращает массив записей за указанный период. Для RECOVERY: "
-            "recovery_zone уже вычислен: red 1–33, yellow 34–66, "
-            "green 67–100 — бери как есть, не пересчитывай по памяти."
+            "recovery_zone уже вычислен для числового процента 0–100: "
+            "red ≤33, yellow >33 и ≤66, green >66. "
+            "null означает, что зона неизвестна; не угадывай её."
         ),
         schema={
             "type": "object",

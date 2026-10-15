@@ -306,9 +306,11 @@ def _collect_pages(path: str, state_dir: str, client_id: str,
 def recovery_zone(score) -> str | None:
     """Map a recovery score to its color zone.
 
-    red ≤33, yellow 34–66, green ≥67; None for missing/non-numeric.
+    For numeric percentages in [0, 100]: red <=33, yellow <=66, else green.
+    Missing, non-numeric, non-finite and out-of-range values have no zone.
     """
-    if isinstance(score, (int, float)) and not isinstance(score, bool):
+    if (isinstance(score, (int, float)) and not isinstance(score, bool)
+            and 0 <= score <= 100):
         if score <= 33:
             return "red"
         if score <= 66:
@@ -366,7 +368,7 @@ def summary(state_dir: str, client_id: str, client_secret: str,
 
     if recovery:
         r = recovery[0]
-        score = r.get("score", {})
+        score = r.get("score") or {}
         recovery_score = score.get("recovery_score")
         result["recovery"] = {
             "recovery_score": recovery_score,
@@ -379,7 +381,7 @@ def summary(state_dir: str, client_id: str, client_secret: str,
 
     if sleep:
         s = sleep[0]
-        score = s.get("score", {})
+        score = s.get("score") or {}
         stage = score.get("stage_summary", {})
         result["sleep"] = {
             "sleep_performance_pct": score.get(
@@ -398,7 +400,7 @@ def summary(state_dir: str, client_id: str, client_secret: str,
 
     if cycles:
         c = cycles[0]
-        sc = c.get("score", {})
+        sc = c.get("score") or {}
         result["strain"] = {
             "strain": sc.get("strain"),
             "kilojoule": sc.get("kilojoule"),
