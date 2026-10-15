@@ -1,6 +1,6 @@
 ---
 name: whoop-health
-version: 0.3.0
+version: 0.3.1
 type: extension
 plugin_api: "2.0"
 runtime: python3
@@ -25,7 +25,7 @@ requested_keys:
 timeout_sec: 90
 ---
 
-# WHOOP Health v0.3.0
+# WHOOP Health v0.3.1
 
 Extension skill для Ouroboros — собирает данные со смарт-браслета WHOOP
 через [официальный API v2](https://developer.whoop.com/api)
@@ -58,8 +58,8 @@ Access token обновляется автоматически через refres
 | `whoop_auth_url` | Генерирует OAuth2 URL для авторизации в браузере |
 | `whoop_exchange_code` | Обменивает authorization code на access + refresh tokens |
 | `whoop_check` | Проверка подключения (GET /v2/user/profile/basic) |
-| `whoop_summary` | Сводка за последние N дней: recovery, сон, strain |
-| `whoop_fetch` | Детальные данные по типу: RECOVERY, SLEEP, WORKOUT, CYCLE |
+| `whoop_summary` | Сводка за последние N дней: recovery, сон, strain. |
+| `whoop_fetch` | Детальные данные по типу: RECOVERY, SLEEP, WORKOUT, CYCLE. |
 
 ## Данные и права
 

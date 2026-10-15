@@ -303,12 +303,32 @@ def _collect_pages(path: str, state_dir: str, client_id: str,
     return items
 
 
+def recovery_zone(score) -> str | None:
+    """Map a recovery score to its color zone.
+
+    red ≤33, yellow 34–66, green ≥67; None for missing/non-numeric.
+    """
+    if isinstance(score, (int, float)) and not isinstance(score, bool):
+        if score <= 33:
+            return "red"
+        if score <= 66:
+            return "yellow"
+        return "green"
+    return None
+
+
 def fetch_recovery(state_dir: str, client_id: str, client_secret: str,
                    days: int = 1) -> list[dict]:
     end = _iso(_utc_now())
     start = _iso(_utc_now() - timedelta(days=days))
-    return _collect_pages(
+    records = _collect_pages(
         "/recovery", state_dir, client_id, client_secret, start, end)
+    for r in records:
+        score = r.get("score")
+        if score is not None:
+            score["recovery_zone"] = recovery_zone(
+                score.get("recovery_score"))
+    return records
 
 
 def fetch_sleep(state_dir: str, client_id: str, client_secret: str,
@@ -347,8 +367,10 @@ def summary(state_dir: str, client_id: str, client_secret: str,
     if recovery:
         r = recovery[0]
         score = r.get("score", {})
+        recovery_score = score.get("recovery_score")
         result["recovery"] = {
-            "recovery_score": score.get("recovery_score"),
+            "recovery_score": recovery_score,
+            "recovery_zone": recovery_zone(recovery_score),
             "hrv_rmssd_ms": score.get("hrv_rmssd_milli"),
             "resting_hr": score.get("resting_heart_rate"),
             "spo2_pct": score.get("spo2_percentage"),

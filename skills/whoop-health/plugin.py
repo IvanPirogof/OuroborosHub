@@ -1,4 +1,4 @@
-"""WHOOP Health — Ouroboros extension skill (v0.3.0).
+"""WHOOP Health — Ouroboros extension skill (v0.3.1).
 
 Full OAuth2 Authorization Code flow:
   whoop_auth_url     — generate browser auth URL
@@ -238,7 +238,9 @@ def register(api):
         name="whoop_summary",
         description=(
             "Сводка WHOOP за последние N дней: recovery (HRV, resting HR, "
-            "SpO2), сон (стадии, performance), strain (нагрузка, HR)."
+            "SpO2), сон (стадии, performance), strain (нагрузка, HR). "
+            "recovery_zone уже вычислен: red 1–33, yellow 34–66, "
+            "green 67–100 — бери как есть, не пересчитывай по памяти."
         ),
         schema={
             "type": "object",
@@ -297,7 +299,9 @@ def register(api):
         name="whoop_fetch",
         description=(
             "Детальные данные WHOOP по типу: RECOVERY, SLEEP, WORKOUT, CYCLE. "
-            "Возвращает массив записей за указанный период."
+            "Возвращает массив записей за указанный период. Для RECOVERY: "
+            "recovery_zone уже вычислен: red 1–33, yellow 34–66, "
+            "green 67–100 — бери как есть, не пересчитывай по памяти."
         ),
         schema={
             "type": "object",
