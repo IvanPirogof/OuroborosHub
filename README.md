@@ -150,6 +150,17 @@ The last command additionally requires Playwright Chromium/WebKit and tests the 
 opaque module bridge with synthetic provider state. It is opt-in, not part of the
 credential-free calendar CI job. It certifies neither live OAuth nor guest-email delivery.
 
+The Smart Lists unit suite is included in catalog CI. Its real module-bridge
+browser checks are opt-in and use isolated skill state (not installed skills):
+
+```bash
+python -m pytest -q skills/smart_lists/tests
+OUROBOROS_THEME_CORE_ROOT=/path/to/ouroboros python -m pytest -q tests/test_smart_lists_browser.py
+```
+
+The optional core manifest validator in the unit suite uses `OUROBOROS_CORE_ROOT`;
+its absence is a disclosed skip, not a successful core-validation check.
+
 ## Review and trust model
 
 OuroborosHub is curated, but hub membership does not bypass review.
