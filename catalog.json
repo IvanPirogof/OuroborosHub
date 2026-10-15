@@ -2226,13 +2226,13 @@
     {
       "slug": "smart_lists",
       "name": "smart_lists",
-      "version": "0.3.4",
+      "version": "0.3.5",
       "type": "extension",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "67415cfb7eed3ac4db825f5ef643e8cef8ec5a6551189aa763b311012f1205ca",
-          "size": 23071
+          "sha256": "eb8a629b57a9520c513f3bb26a8afab60f795ebb64b55d774107e199b382698c",
+          "size": 23179
         },
         {
           "path": "lists_core.py",
@@ -2241,13 +2241,18 @@
         },
         {
           "path": "plugin.py",
-          "sha256": "23ad81ee99068b6e75b1ecbe64cc1deaa544afbd7261225dbc13f412f69e0b3a",
+          "sha256": "e5f082424eaee3914083612e06663321a3bbab2441f51a5e1f609b737f37ff7f",
           "size": 35882
         },
         {
+          "path": "tests/test_read_tree_budget.py",
+          "sha256": "e1596a20e32103c9454ad2deb705aa4269b833176e013f231ff4e485b7fab7f8",
+          "size": 1176
+        },
+        {
           "path": "tests/test_smart_lists.py",
-          "sha256": "759f3c5aaaa91fb412f7ea561ee885734f89564ac0d5b81086718a0e51231068",
-          "size": 119830
+          "sha256": "c651b68db987bd5f7ad4b921b2e76b48b6004196e760ba0573013fa9e2c6d4a4",
+          "size": 119818
         },
         {
           "path": "widget.js",

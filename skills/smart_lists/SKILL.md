@@ -1,7 +1,7 @@
 ---
 name: smart_lists
 description: "Personal lists in one skill-local store: a free group tree, verbatim entries captured from clear owner intent in chat, completion, moves and an undoable trash, a read-only subtree selection, checksummed export/restore with typed refusals for a missing store, and a Today checklist widget with local-day rollover. No network, purchases or reminders."
-version: 0.3.4
+version: 0.3.5
 type: extension
 runtime: python3
 entry: plugin.py
@@ -281,14 +281,16 @@ the same validation and warnings; use it to save an external backup.
   before refusing with `store_busy`, so tools, routes and other processes
   never lose each other's writes. `store_meta.json` is the sentinel described
   above and `backups/` holds exports and pre-replacement copies.
-- Schema version 3. A version 1 store (Smart Lists 0.1.0) or version 2 store
-  (the 0.2.0 candidate) is read as is and rewritten as version 3 on its first
-  change: version 1 gains a store id, a generation and the sentinel; version
-  2's `expired_requests` digests move into `retired_requests`. A schema 1 add
-  journal record with only entry IDs is retired into that filter; retrying its
-  request ID is refused rather than replaying an incomplete result. Older versions
-  refuse a version 3 store as newer (`store_unreadable`) instead of ignoring
-  retired ids, and refuse a version 3 export (`invalid_export`).
+- Schema version 3. Compatible schema 1/2 records upgrade in memory and are
+  rewritten on the next change: schema 1 gains a store id, generation and
+  sentinel; schema 2's `expired_requests` digests become `retired_requests`.
+  Minimal schema 1 add receipts containing only entry IDs are retired instead
+  of replayed. This is not compatibility with every unpublished draft: the
+  0.1.0 draft's richer add receipts lack required fields and are refused as
+  `store_unreadable`; keep that original store and its matching draft reader
+  for recovery rather than replacing it with an empty store. Published schema
+  3 stores retain full replay. Older readers refuse schema 3 stores/exports
+  instead of ignoring retired IDs.
 - Limits: 500 groups, 5000 entries (deleted ones included until erased), 100
   items per call, 1000 characters per entry, 80 per group name, 120 per due
   value, 64 MiB per export read for restore (enough for the worst-case

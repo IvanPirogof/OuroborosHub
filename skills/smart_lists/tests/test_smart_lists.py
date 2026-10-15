@@ -1230,7 +1230,7 @@ class LifecycleTests(SkillCase):
         self.assertIn("copied to", fresh["notice"])
         self.assertEqual(fresh["stats"]["groups"], 0)
 
-    def test_store_saved_by_version_0_1_0_is_read_and_upgraded_on_first_change(self):
+    def test_minimal_schema_1_receipts_are_retired_on_first_change(self):
         self.state_dir.mkdir(parents=True)
         legacy = {
             "schema_version": 1, "next_seq": 3, "updated_at": "2026-09-01T10:00:00+00:00",

@@ -57,8 +57,8 @@ def _truthy(value: Any) -> bool:
 # ---------------------------------------------------------------------------
 
 MAX_TOOL_RESULT_BYTES = 14500  # Leave room below the host's 15k result cap.
-_TRIMMABLE = ("possible_duplicates", "groups", "groups_included", "entries", "added", "changed",
-              "moved", "deleted", "undeleted", "erased", "unchanged", "backups")
+_TRIMMABLE = ("possible_duplicates", "entries", "added", "changed", "moved", "deleted",
+              "undeleted", "erased", "unchanged", "backups", "groups", "groups_included")
 _KEEP_ONE = {"entries", "added", "changed", "moved", "deleted", "undeleted", "erased"}
 
 
