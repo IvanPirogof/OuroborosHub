@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from model import (
-    AVAIL_BUSY, PROVIDER_GOOGLE, PROVIDER_LOCAL, PROVIDER_YANDEX, account_id as make_account_id, calendar_id as make_calendar_id,
+    AVAIL_BUSY, AVAIL_FREE, PROVIDER_GOOGLE, PROVIDER_LOCAL, PROVIDER_YANDEX, account_id as make_account_id, calendar_id as make_calendar_id,
     get_tz, tz_name as zone_name, iso_utc, now_utc, own_reminders, parse_stored,
 )
 from ops import ProviderError
@@ -202,7 +202,8 @@ def ics_to_rows(ics_text: str, calendar_id: str, href: str, etag: str, default_t
             "rdates": ",".join(_dt_list(comp.get("RDATE"), tz_hint)) if comp.get("RDATE") else "",
             "recurrence_id": rec_key, "status": "cancelled" if status == "cancelled" else "confirmed",
             "organizer": organizer, "attendees_json": json.dumps(attendees, ensure_ascii=False),
-            "reminders_json": json.dumps(sorted(set(reminders))), "origin": "external", "availability": AVAIL_BUSY,
+            "reminders_json": json.dumps(sorted(set(reminders))), "origin": "external",
+            "availability": AVAIL_FREE if str(comp.get("TRANSP") or "OPAQUE").upper() == "TRANSPARENT" else AVAIL_BUSY,
             "sync_state": "synced", "raw_payload": ics_text if rec_key == "" else "",
         }
         if rec_key:
@@ -276,7 +277,7 @@ def row_to_ics(event: Dict[str, Any], prodid: str = "-//Ouroboros//calendar//RU"
         if live_start == str(event.get("start_utc") or "") and live_rule == str(event.get("rrule") or ""):
             live_exdates = _dt_list(vevent.get("EXDATE"), tz)   # same series: cancellations that live only on the server stay
     for key in ("DTSTART", "DTEND", "DURATION", "SUMMARY", "DESCRIPTION", "LOCATION", "RRULE", "STATUS", "LAST-MODIFIED", "DTSTAMP", "SEQUENCE",
-                "EXDATE", "RDATE", "ATTENDEE", "ORGANIZER"):
+                "EXDATE", "RDATE", "ATTENDEE", "ORGANIZER", "TRANSP"):
         if key in vevent:
             del vevent[key]
     uid = str(event.get("uid") or event.get("external_id") or "")
@@ -313,6 +314,7 @@ def row_to_ics(event: Dict[str, Any], prodid: str = "-//Ouroboros//calendar//RU"
         if rd:
             vevent.add("RDATE", rd)
     vevent.add("STATUS", "CANCELLED" if str(event.get("status") or "") == "cancelled" else "CONFIRMED")
+    vevent.add("TRANSP", "TRANSPARENT" if event.get("availability") == AVAIL_FREE else "OPAQUE")
     vevent.add("DTSTAMP", now)
     vevent.add("LAST-MODIFIED", now)
     vevent.add("SEQUENCE", seq)

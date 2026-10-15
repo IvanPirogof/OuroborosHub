@@ -380,8 +380,9 @@ class GoogleAdapter:
             # PATCH of a title-only occurrence must not turn inherited master reminders
             # into an explicit Google instance default (or overwrite an existing override).
             body.pop("reminders", None)
-        attendees = json.loads(event.get("attendees_json") or "[]")
-        params = {"sendUpdates": "all" if (payload.get("send_updates") and attendees) else "none"}
+        # Removing the last guest is still an update for which the caller may
+        # request notifications. The remaining guest count is not that choice.
+        params = {"sendUpdates": "all" if payload.get("send_updates") else "none"}
         headers = {"If-Match": expected_etag} if expected_etag else {}
         _, resp_headers, data = self._request("PATCH", f"/calendars/{urllib.parse.quote(calendar['external_id'], safe='')}/events/{urllib.parse.quote(external_id, safe='')}",
                                               params, body, headers)
@@ -605,6 +606,5 @@ def row_to_gevent(event: Dict[str, Any], mute: bool = False) -> Dict[str, Any]:
         attendees = json.loads(event.get("attendees_json") or "[]")
     except ValueError:
         attendees = []
-    if attendees:
-        body["attendees"] = [{"email": a.get("email"), **({"responseStatus": a.get("status")} if a.get("status") else {})} for a in attendees if a.get("email")]
+    body["attendees"] = [{"email": a.get("email"), **({"responseStatus": a.get("status")} if a.get("status") else {})} for a in attendees if a.get("email")]
     return body

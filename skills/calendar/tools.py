@@ -474,7 +474,7 @@ def cal_free(ctx: Context, start: str = "", end: str = "", duration_min: int = 6
             return json_dumps({"status": "error", "message": err})
     else:
         cal_ids = [c["id"] for c in ctx.store.list_calendars() if c["role_busy"]]
-    occs = ctx.occurrences(s, e, cal_ids or None)
+    occs = ctx.occurrences(s, e, cal_ids) if cal_ids else []
     hard, soft = ops.busy_intervals(occs)
     wh = parse_working_hours(working_hours or ctx.store.get_setting("working_hours") or "")
     slots = ops.free_windows(hard, s, e, timedelta(minutes=max(5, _int(duration_min, 60))), wh, ctx.tz, max_slots=max(1, min(_int(kwargs.get("max", max_slots), 6), 10)))
