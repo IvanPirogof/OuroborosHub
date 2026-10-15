@@ -1473,8 +1473,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "06d1390d9fd6357206e652a727d37528f503663d25db0f4b26dc85b5b976c94d",
-          "size": 34701
+          "sha256": "8e05041b483857e00f62dd652a22b0b50800c8b8699b76ec0d417a19fe9d0a44",
+          "size": 37134
         },
         {
           "path": "lib/__init__.py",
@@ -1488,8 +1488,8 @@
         },
         {
           "path": "lib/events.py",
-          "sha256": "2c75afac3592d2b5de14752465ce1fd11ea4eb0dc62e21afd22c3752b9718dd6",
-          "size": 12751
+          "sha256": "f48551d5d2a11241c304760fa018dc9f88d595fbf6cc4eec2fbd6ccb7d554573",
+          "size": 12930
         },
         {
           "path": "lib/host_adapter.py",
@@ -1503,8 +1503,8 @@
         },
         {
           "path": "lib/provider_context.py",
-          "sha256": "7035cb66e28fb002917559fd7199e64b682fa60f51e4971c00d0ee2be15ccc45",
-          "size": 3962
+          "sha256": "c854a5085a697d3044a9ab1736970c24b4c8ecd25b4365714bd6301522e7490d",
+          "size": 6749
         },
         {
           "path": "lib/read_tools.py",
@@ -1528,8 +1528,8 @@
         },
         {
           "path": "lib/store.py",
-          "sha256": "39fb24a4e08da350b1ef36579a5fd4114e89cdd93920da26dc040cb602fd7f2a",
-          "size": 48510
+          "sha256": "df264821396fcacdae8655529e994640ecbb57ea7a488efd9d7b4b41ed869810",
+          "size": 50697
         },
         {
           "path": "lib/tool_results.py",
@@ -1538,8 +1538,8 @@
         },
         {
           "path": "manifest.json",
-          "sha256": "a7e5290ce30052778320acc397bc4c593fd2d3f511a929a4bed0e9b6cfaf5b29",
-          "size": 1169
+          "sha256": "f6d6c531bc5441fb263f3ac5408a08e6e3ea686c412ee5d7a0ba7da36cfa31b4",
+          "size": 1221
         },
         {
           "path": "plugin.py",
@@ -1593,8 +1593,8 @@
         },
         {
           "path": "tests/test_events_store.py",
-          "sha256": "55e292bc58a2b5c5713dd057f2ddcb373d54b9e9c2799fcc0f769e287a1d80a4",
-          "size": 11280
+          "sha256": "6ad1856a46f61931246c090d7081fc1430973fa84d6f3bb4749f4070e28b6041",
+          "size": 12265
         },
         {
           "path": "tests/test_host_adapter.py",
@@ -1632,19 +1632,24 @@
           "size": 5118
         },
         {
+          "path": "tests/test_message_mentions.py",
+          "sha256": "2d2ff01e7ee560f858f0407e2b5e5de4b940a652e7dd2b477ed8b94b0c171382",
+          "size": 9925
+        },
+        {
           "path": "tests/test_message_revisions.py",
           "sha256": "5a320cb1bb2bec8f3b114befa92b1c3f2fd0665151f0014f21513a98bc6dbdce",
           "size": 6942
         },
         {
           "path": "tests/test_presence_continuation.py",
-          "sha256": "6db95ff5af9292e91103dce8ca4aff8798dfb24613f3a89907a04d8abd21e829",
-          "size": 59053
+          "sha256": "ff3626f505d8b43f03f6771f3e58f311db182372d681d73f39119629df4cabec",
+          "size": 59192
         },
         {
           "path": "tests/test_presence_process_consumer.py",
-          "sha256": "92cf73baa9a24e64054cacbd9fb66e0db291d82c25f02147b3b9a8de1847bea4",
-          "size": 42871
+          "sha256": "201b6eec003776baab186591ae17cdd63fb3cd45f2df785a37f16aafd24ac080",
+          "size": 43979
         },
         {
           "path": "tests/test_provider_context.py",
@@ -1673,8 +1678,13 @@
         },
         {
           "path": "tests/test_socket_mode.py",
-          "sha256": "f2bd398507ec7f4d4b28acd01590e34b5524d4c7cdfd120074f0cee15b582b5d",
-          "size": 2150
+          "sha256": "0705fee16762875399b1a27b65289b06e85c501d193a442506b0a25f19ff2284",
+          "size": 2404
+        },
+        {
+          "path": "tests/test_thread_context.py",
+          "sha256": "4dbecd8f4bc7347dd7dc33a5037ada9b728fc216ecc63785b776a68bf7ab56bf",
+          "size": 14244
         },
         {
           "path": "tests/test_tool_contract.py",
@@ -1695,7 +1705,7 @@
       "name": "slack-bridge",
       "slug": "slack-bridge",
       "type": "extension",
-      "version": "1.6.0"
+      "version": "1.6.1"
     },
     {
       "description": "Inspect, filter, sort, group, and aggregate CSV and XLSX tables while reporting truncation and non-numeric values honestly.",
