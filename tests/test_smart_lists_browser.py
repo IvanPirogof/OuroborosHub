@@ -193,7 +193,7 @@ def test_lists_registered_tools_and_real_widget(lists_server, tmp_path, engine, 
             assert len(exported['sha256']) == 64
             tool('delete', entry_ids=[item], request_id='post-export-delete')
             tool('store', action='restore', file=str(downloaded), replace=True)
-            assert any(e['id'] == item for e in tool('read', status='all', limit=500)['entries'])
+            assert any(e['id'] == item for e in tool('read', group='Work', status='all')['entries'])
             awaitable = page.evaluate('async () => { await disposeWidget(); return true; }')
             assert awaitable
             expect(page.locator('iframe')).to_have_count(0)
