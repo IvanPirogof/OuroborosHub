@@ -70,7 +70,8 @@ def lists_server(tmp_path):
             self.send_header('Content-Type', content_type)
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            if self.command != 'HEAD':
+                self.wfile.write(body)
 
         def dispatch(self):
             url = urlsplit(self.path)
@@ -93,7 +94,7 @@ def lists_server(tmp_path):
                         if state['reject']:
                             return self.send({'ok':False,'error':'Synthetic refusal; nothing changed'})
                     try:
-                        return self.send(api.call_route(name, method=self.command, body=body,
+                        return self.send(api.call_route(name, method='GET' if self.command == 'HEAD' else self.command, body=body,
                             query={k:v[-1] for k,v in parse_qs(url.query).items()}))
                     except Exception as exc:
                         state['errors'].append(repr(exc))
@@ -101,6 +102,7 @@ def lists_server(tmp_path):
             return self.send({'error':'not found'}, status=404)
 
         do_GET = dispatch
+        do_HEAD = dispatch
         do_POST = dispatch
 
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
@@ -143,12 +145,13 @@ def test_lists_registered_tools_and_real_widget(lists_server, tmp_path, engine, 
             expect(box).not_to_be_checked()
             expect(frame.locator('.list')).to_contain_text('tomorrow')
             box.check()
-            expect(frame.locator(f'input[data-entry-id="{item}"]')).to_be_checked()
+            expect(frame.locator(f'input[data-entry-id="{item}"]')).to_have_attribute('aria-label', 'Вернуть в дела: Oat milk')
             assert tool('read', status='done')['entries'][0]['id'] == item
             frame = mount()  # Persistence through a new opaque frame.
             expect(frame.locator(f'input[data-entry-id="{item}"]')).to_be_checked()
             frame.locator(f'input[data-entry-id="{item}"]').uncheck()
-            expect(frame.locator(f'input[data-entry-id="{item}"]')).not_to_be_checked()
+            expect(frame.locator(f'input[data-entry-id="{item}"]')).to_have_attribute('aria-label', 'Отметить выполненным: Oat milk')
+            assert tool('read')['entries'][0]['status'] == 'open'
             state['reject'] = True
             frame.locator(f'input[data-entry-id="{item}"]').check()
             expect(frame.locator('.error')).to_contain_text('Synthetic refusal')
@@ -184,9 +187,10 @@ def test_lists_registered_tools_and_real_widget(lists_server, tmp_path, engine, 
             with page.expect_download() as caught:
                 frame.get_by_role('button', name='Скачать резервную копию').click()
             downloaded = evidence / f'lists-{engine}-{width}-export.json'
+            assert caught.value.suggested_filename == 'smart-lists-export.json'
             caught.value.save_as(str(downloaded))
             exported = json.loads(downloaded.read_text())
-            assert 'checksum' in exported or 'sha256' in exported, exported.keys()
+            assert len(exported['sha256']) == 64
             tool('delete', entry_ids=[item], request_id='post-export-delete')
             tool('store', action='restore', file=str(downloaded), replace=True)
             assert any(e['id'] == item for e in tool('read', status='all', limit=500)['entries'])
