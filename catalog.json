@@ -2089,24 +2089,24 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "62369957ca5b2e5b40deae99aec2a7f242c0a37e877491b299ad35a03904a860",
-          "size": 3820
+          "sha256": "d3b59a06e6bb33c541f5e399722ca7320d1218b74475fc5ebb7f1b58925bcf30",
+          "size": 5474
         },
         {
           "path": "plugin.py",
-          "sha256": "73cc912aadf3cd0cce95f9d8de338c651c91607a052c9b2fb8a3060347dd8c95",
-          "size": 11895
+          "sha256": "ab6920f9aeb66374c5d8b64c7c0960a6828af36ef01baeb0c69a78ac345f57ff",
+          "size": 12688
         },
         {
           "path": "whoop_client.py",
-          "sha256": "6213b81c775c4132333b287ca6f160effa55b472cda2c9a4ae150ff1fece9c34",
-          "size": 13651
+          "sha256": "76d53e247b17a5c0818c4e4b792b1ddd1b9ca1a20efbcd91cbd9dff17108b485",
+          "size": 14519
         }
       ],
       "name": "whoop-health",
       "slug": "whoop-health",
       "type": "extension",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "when_to_use": "Пользователь спрашивает о данных с WHOOP: сон, восстановление, нагрузка (strain), тренировки, HRV, пульс, SpO2. Примеры: «покажи recovery с WHOOP», «как я спал по WHOOP?», «сводка здоровья WHOOP», «авторизуй WHOOP»."
     },
     {
