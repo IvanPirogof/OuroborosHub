@@ -2261,6 +2261,20 @@
         }
       ],
       "description": "Personal lists in one skill-local store: a free group tree, verbatim entries captured from clear owner intent in chat, completion, moves and an undoable trash, a read-only subtree selection, checksummed export/restore with typed refusals for a missing store, and a Today checklist widget with local-day rollover. No network, purchases or reminders."
+    },
+    {
+      "slug": "meeting-brief",
+      "name": "meeting-brief",
+      "version": "0.1.3",
+      "type": "instruction",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "b63deea73687872ad4466981a635f5b3d82e789b6db8fec4c2855b1c28fa509b",
+          "size": 12383
+        }
+      ],
+      "description": "Prepare sourced morning work briefs, selected-meeting briefs, and post-meeting or end-of-day debriefs using existing calendar and approved information sources."
     }
   ]
 }
