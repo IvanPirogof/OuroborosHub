@@ -209,12 +209,9 @@ def _stage_feed(store, cal, rows, basis, awaiting, kind, next_cursor):
                     deleted += int(store.confirm_pending_delete(existing["id"], basis[existing['id']])) if existing['id'] in basis else 0
                 elif existing.get("sync_state") not in ("pending", "conflict", "failed"):
                     if existing['id'] in basis:
-                        if not existing.get('link_group_id'):
-                            deleted += int(store.retire_provider_absent(existing['id'], basis[existing['id']]))
-                        else:
-                            result = _stage_absent_cascade(store, existing['id'], basis[existing['id']], basis)
-                            deleted += int(result.get('status') == 'ok')
-                            assignments.extend(result.get('assignments', []))
+                        result = _stage_absent_cascade(store, existing['id'], basis[existing['id']], basis, source_cancelled=True)
+                        deleted += int(result.get('status') == 'ok')
+                        assignments.extend(result.get('assignments', []))
             continue
         if existing is None:
             saved = store.insert_provider_master({k: v for k, v in row.items() if k != "master_external_id"})
@@ -309,7 +306,10 @@ def _stage_feed(store, cal, rows, basis, awaiting, kind, next_cursor):
         # A CalDAV series is one resource read whole: an override VEVENT the server no longer holds (its date
         # cancelled by EXDATE, or the move undone) is not a local exception any more. Our own unsent writes stay.
         present = {r["recurrence_id"] for r in rows if r.get("recurrence_id") and r.get("uid") == uid}
+        excluded = ops.excluded_slots(store.get_event(master_id) or {})
         for exc in store.exceptions_for(master_id):
+            if exc.get('status') == 'cancelled' and exc.get('recurrence_id') in excluded:
+                continue  # CalDAV confirms a cancelled slot with EXDATE, not an override VEVENT.
             if exc.get("recurrence_id") not in present and exc['id'] in basis:
                 store.retire_synced_exception(exc["id"], observed=basis[exc['id']])
     for root, commands in copy_commands.items():
@@ -406,21 +406,29 @@ def _confirmed_deletion(store: Store, providers: Providers, local: Dict[str, Any
         # Its siblings already have their own intents if the owner requested a cascade.
         return int(store.confirm_pending_delete(local["id"], observed))
     observed = observed if observed is not None else local
-    if not local.get("link_group_id"):
-        return int(store.retire_provider_absent(local["id"], observed))
     basis = basis if basis is not None else store.sync_basis(local['calendar_id'])
     staged = ops._finish_command(store, providers, _stage_absent_cascade, "companion", local["id"], observed, basis)
     return int(staged.get("status") == "ok")
 
 
-def _stage_absent_cascade(view, event_id: str, observed: Dict[str, Any], basis) -> Dict[str, Any]:
+def _stage_absent_cascade(view, event_id: str, observed: Dict[str, Any], basis, source_cancelled=False) -> Dict[str, Any]:
     """Runs inside ops._finish_command's write transaction: the guard and the linked-copy cascade commit together or not at all."""
     if view.provider_absence_blocker(event_id, observed):
         return {"status": "protected", "assignments": []}
     row = view.get_event(event_id)
+    siblings = [sibling for sibling in view.group_masters(row['link_group_id']) if sibling['id'] != event_id] if row.get('link_group_id') else []
     if any(not _copy_unchanged(view, sibling['id'], basis)
-           for sibling in view.group_masters(row['link_group_id']) if sibling['id'] != event_id):
+           for sibling in siblings):
         return {'status': 'protected', 'assignments': []}
+    if source_cancelled or not siblings:
+        # A provider-confirmed cancellation is not a request to DELETE that
+        # same resource. Former link membership alone also implies no cascade.
+        if not view.retire_provider_absent(event_id, observed):
+            return {'status': 'protected', 'assignments': []}
+        assignments = []
+        for sibling in siblings:
+            assignments.extend(ops._stage_delete_event(view, sibling['id'], scope=SCOPE_ALL, cascade=False).get('assignments', []))
+        return {'status': 'ok', 'assignments': assignments}
     return ops._stage_delete_event(view, event_id, scope=SCOPE_ALL)
 
 

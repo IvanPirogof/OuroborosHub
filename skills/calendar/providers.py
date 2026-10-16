@@ -223,10 +223,12 @@ def _listify(value: Any) -> List[Any]:
 
 
 def row_to_ics(event: Dict[str, Any], prodid: str = "-//Ouroboros//calendar//RU", mute_alarms: bool = False,
-               removed_exdates: Optional[List[str]] = None) -> str:
+               removed_exdates: Optional[List[str]] = None, cancelled_slots: Optional[List[str]] = None) -> str:
     """Build VCALENDAR from a row; when the row carries the provider's original text, edit it in place.
 
     ``mute_alarms`` = the owner switched «напоминает Уроборос» on for this calendar: no VALARM goes to the provider.
+    ``removed_exdates`` removes only observed replaced dates; ``cancelled_slots``
+    retains separately acknowledged occurrence cancellations across rule changes.
     """
     icalendar = _ical()
     start = parse_stored(event.get("start_utc"))
@@ -303,6 +305,8 @@ def row_to_ics(event: Dict[str, Any], prodid: str = "-//Ouroboros//calendar//RU"
     if event.get("rrule"):
         vevent.add("RRULE", icalendar.vRecur.from_ical(str(event["rrule"])))
     all_exdates = sorted(set([x for x in str(event.get("exdates") or "").split(",") if x] + (live_exdates if event.get("rrule") else [])))
+    if event.get('rrule'):
+        all_exdates = sorted(set(all_exdates) | set(cancelled_slots or []))
     if all_exdates:
         ex = [parse_stored(x) for x in all_exdates]
         ex = [x.astimezone(tz).date() if all_day else x.astimezone(tz) for x in ex if x]
@@ -589,7 +593,8 @@ class YandexAdapter:
             previous = set(filter(None, str(payload.get('previous_exdates') or '').split(',')))
             desired = set(filter(None, str(event.get('exdates') or '').split(',')))
             removed = sorted(previous - desired)
-        sent = row_to_ics(event, mute_alarms=bool(payload.get("mute_provider_reminders")), removed_exdates=removed)
+        sent = row_to_ics(event, mute_alarms=bool(payload.get("mute_provider_reminders")),
+                          removed_exdates=removed, cancelled_slots=payload.get('cancelled_slots'))
         _, resp_headers, _ = self._request("PUT", href, sent, headers)
         return {"etag": self._write_version(href, sent, resp_headers)}
 

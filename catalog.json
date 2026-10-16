@@ -2284,8 +2284,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "6ce5d7ee4071a13dafee9c97670764b350a21d02a3111ff054786d9e156b1fd2",
-          "size": 26662
+          "sha256": "daed6ef50b62e0ddd72cff307066fbb0edd6bafdecc432e2b3a505c2f8f0cf6b",
+          "size": 26922
         },
         {
           "path": "conflicts.py",
@@ -2299,8 +2299,8 @@
         },
         {
           "path": "ops.py",
-          "sha256": "96a7eaa75d88155f11f01492c3c0c329d5c6c57497ad7e0ba6bea7d3652c697b",
-          "size": 84873
+          "sha256": "9e29389b054e6d91264fe30bf62d5196efc5df586b0a4258aa8feda0989bc1e7",
+          "size": 85487
         },
         {
           "path": "plugin.py",
@@ -2309,8 +2309,8 @@
         },
         {
           "path": "providers.py",
-          "sha256": "cfb2ae94b4041e94e1fdb271358fecdb2b1fd812b9ea2745116df63d639b5058",
-          "size": 38839
+          "sha256": "d6f0f81f7ed4090e1fc8ff4c4006f46ab2d64dc392fba9682dcaabfd7781488b",
+          "size": 39225
         },
         {
           "path": "providers_google.py",
@@ -2329,8 +2329,8 @@
         },
         {
           "path": "scripts/worker.py",
-          "sha256": "94221956c0bf3ff9784e0a213ccab00d5a9b8de423d6b85d2ad2f37349b813b8",
-          "size": 27927
+          "sha256": "e64de30c13b5f9c8b2f620ea701ea9ff673cfefbcb6649852297def799d8b2f5",
+          "size": 28564
         },
         {
           "path": "store.py",
@@ -2416,6 +2416,11 @@
           "path": "tests/test_calendar_review_r7.py",
           "sha256": "cb59eb383ad8674c807e7329fcdcff8c34e1c21a8663877a436c08065445cdf6",
           "size": 6858
+        },
+        {
+          "path": "tests/test_calendar_review_r8.py",
+          "sha256": "bf9144abcfa530265276abd87374fdc1c76a02ac3862b486d48c4d1edc39188f",
+          "size": 5999
         },
         {
           "path": "tests/test_calendar_round2.py",

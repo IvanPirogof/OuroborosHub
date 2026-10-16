@@ -486,6 +486,7 @@ def _stage_update_event(store, event_id: str, changes: Dict[str, Any], scope: st
                 if sib_delta:
                     targets.extend(_shift_series_rows(store, sib, sib_delta, allowed))
     rsvp_only = set(changes.keys()) == {"my_response"}
+    family_rows = {**before, **{target['id']: target for target in targets if target}}
     previous_by_calendar = {}
     for target in targets:
         if target is None:
@@ -534,6 +535,12 @@ def _stage_update_event(store, event_id: str, changes: Dict[str, Any], scope: st
                 # Remove only exclusions this command actually observed and replaces.
                 # Independent occurrence cancellations can exist only in the live ICS.
                 payload['previous_exdates'] = (old_target or {}).get('exdates') or ''
+            if cal['provider'] == 'yandex' and current.get('rrule') and not current.get('master_id'):
+                # An accepted occurrence cancellation is not merely a member
+                # of the source master's replaceable EXDATE list.
+                payload['cancelled_slots'] = sorted({e['recurrence_id'] for e in family_rows.values()
+                    if e.get('master_id') == current['id'] and e.get('status') == 'cancelled'
+                    and e.get('sync_state') == 'synced' and not e.get('deleted_at')})
             if old_target and old_target.get('master_id') and old_target['master_id'] != current.get('master_id'):
                 payload['relocated_from_master'] = old_target['master_id']
             if kind != 'create' and not _write_etag(store, cal, current):
