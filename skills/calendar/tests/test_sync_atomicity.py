@@ -194,9 +194,9 @@ class AbsenceRaceTests(SyncCase):
         adapter = FeedAdapter()
         result = self.sync(adapter)
         self.assertEqual((adapter.probes, result[1]), (["exists"], 1))
-        self.assertIsNone(self.ctx.store.get_event(source["id"]))                     # the delete intent hard-deleted it
+        self.assertTrue(self.ctx.store.get_event(source["id"])["deleted_at"])
         self.assertTrue(self.ctx.store.get_event(sibling["id"])["deleted_at"])
-        self.assertEqual([c[0] for c in self.recording.calls if c[0] == "delete"], ["delete"])
+        self.assertEqual([c[0] for c in self.recording.calls if c[0] == "delete"], [])  # already absent source is never deleted again
 
     def test_remote_deletion_cannot_cascade_over_an_edit_of_the_linked_copy(self):
         source, sibling = self.linked()

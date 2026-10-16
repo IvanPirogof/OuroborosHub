@@ -2284,8 +2284,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "f9c8c2987858d2b10a59504e082e8c96e7ab5eaeac54ea868183685efac47987",
-          "size": 27620
+          "sha256": "5309202bf87767575b5d297fcb0d7cd86dca25d92f3f13391c8a66bf37daac5e",
+          "size": 28073
         },
         {
           "path": "conflicts.py",
@@ -2329,8 +2329,8 @@
         },
         {
           "path": "scripts/worker.py",
-          "sha256": "1197e360dc61132d24b03524ad38cb7a567eddac616b6a06b8b2393c5155b432",
-          "size": 28735
+          "sha256": "bc499fe4ce1d58739ee17cd488d0cef7309f431890b20a918a9e1d997b013c88",
+          "size": 30000
         },
         {
           "path": "store.py",
@@ -2484,8 +2484,13 @@
         },
         {
           "path": "tests/test_sync_atomicity.py",
-          "sha256": "59dea8d75c8b6901f8556c8e43ce04e1f0080696b6bb3c76ec791b6794f8514d",
-          "size": 16939
+          "sha256": "0f9a4a9824c146cee4d8c070e1d4db0af306b3e5e5c9d3e1a018bac6e59e73e0",
+          "size": 16935
+        },
+        {
+          "path": "tests/test_sync_failure_isolation.py",
+          "sha256": "37de8604557cf8743b39843c988c03bc74674762557ef72d50fc596fd84cca62",
+          "size": 2670
         },
         {
           "path": "tests/test_widget_browser.py",

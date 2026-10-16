@@ -386,6 +386,27 @@ def _copy_unchanged(view, event_id, basis):
 
 
 def _stage_sync_copy(view, basis, root, commands):
+    """A divergent copy cannot roll back the source feed or another copy.
+
+    Roll back this copy's whole command batch, not only its failing suffix.
+    Keep the provider snapshot and expose the rejected propagation for inspection.
+    """
+    with view._conn() as c:
+        c.execute('SAVEPOINT calendar_copy')
+        try:
+            result = _stage_sync_copy_commands(view, basis, root, commands)
+        except ValueError as exc:
+            c.execute('ROLLBACK TO calendar_copy')
+            row = view.get_event(root)
+            if row:
+                view.set_sync_state(row['calendar_id'], last_error='Linked copy not propagated: ' + str(exc))
+            result = {'status': 'protected', 'assignments': [], 'message': str(exc)}
+        finally:
+            c.execute('RELEASE calendar_copy')
+    return result
+
+
+def _stage_sync_copy_commands(view, basis, root, commands):
     """Check the pre-fetch destination once and stage the entire observation.
 
     No provider I/O happens until all its parts and their dependencies commit.
@@ -475,8 +496,14 @@ def main() -> int:
                 due = time.time() - last_sync.get(account["id"], 0) >= SYNC_INTERVAL_SEC
                 forced = requested is not None and (requested.timestamp() > last_sync.get(account["id"], 0))
                 if due or forced:
-                    health["sync"].append(sync_account(store, providers, account, tz))
-                    last_sync[account["id"]] = time.time()
+                    try:
+                        health["sync"].append(sync_account(store, providers, account, tz))
+                    except Exception as exc:
+                        health["sync"].append({'account': account['id'], 'status': 'error',
+                                              'error': f'{type(exc).__name__}: {exc}'})
+                        _log('account sync failed', account=account['id'], error=str(exc))
+                    finally:
+                        last_sync[account["id"]] = time.time()
             health["intents"] = ops.retry_due_intents(store, providers, owner="companion")
             held: Dict[str, str] = {}
             planned = rem.plan(store, lambda s, e: ops.expand(store.window(s, e, include_hidden=True), s, e,

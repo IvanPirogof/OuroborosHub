@@ -28,7 +28,7 @@ def load_tests(loader, standard_tests, pattern):
         return standard_tests
     if SKILL_TESTS not in sys.path:
         sys.path.insert(0, SKILL_TESTS)
-    # Every module in skills/calendar/tests, so a new regression file cannot be left out of this entry point.
+    # unittest cases from each module; pytest-function tests run in calendar-skill CI.
     for name in sorted(n[:-3] for n in os.listdir(SKILL_TESTS) if n.startswith("test_") and n.endswith(".py")):
         standard_tests.addTests(loader.loadTestsFromModule(importlib.import_module(name)))
     return standard_tests
