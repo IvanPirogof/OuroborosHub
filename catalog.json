@@ -2275,6 +2275,240 @@
         }
       ],
       "description": "Prepare sourced morning work briefs, selected-meeting briefs, and post-meeting or end-of-day debriefs using existing calendar and approved information sources."
+    },
+    {
+      "slug": "calendar",
+      "name": "calendar",
+      "version": "1.0.13",
+      "type": "extension",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "5309202bf87767575b5d297fcb0d7cd86dca25d92f3f13391c8a66bf37daac5e",
+          "size": 28073
+        },
+        {
+          "path": "conflicts.py",
+          "sha256": "d2c740c7156147dbdc05b0b4bf037caee8ea6961147034216cec1891a1e5d704",
+          "size": 18675
+        },
+        {
+          "path": "model.py",
+          "sha256": "d5c58072ebf49e0f4aaf97417a8e940d626c7e8b2178ba1b76625d2b607d1e64",
+          "size": 13410
+        },
+        {
+          "path": "ops.py",
+          "sha256": "96a7eaa75d88155f11f01492c3c0c329d5c6c57497ad7e0ba6bea7d3652c697b",
+          "size": 84873
+        },
+        {
+          "path": "plugin.py",
+          "sha256": "940bb7e62f560aa46bc4b2bb473eefd4ed16ab06026afa6284dfe0cd7934393d",
+          "size": 11634
+        },
+        {
+          "path": "providers.py",
+          "sha256": "a37391cacf6186feefbfcc616cd29134cba71936070c9f4ac959178b825f09dc",
+          "size": 39298
+        },
+        {
+          "path": "providers_google.py",
+          "sha256": "7e113cd56c7694365bdaf825ec4d7bc594913b5092f0e56962906f271354fd62",
+          "size": 41505
+        },
+        {
+          "path": "reminders.py",
+          "sha256": "c9e160dcbf71bca3a9e533af0a1ee60051393b038559bb2f474c07a17bd06bf0",
+          "size": 24833
+        },
+        {
+          "path": "routes.py",
+          "sha256": "e90d3fd9be8d01f50f27c9caeff0cbece3c61d5f026d7174e34d8d03f61caa31",
+          "size": 16561
+        },
+        {
+          "path": "scripts/worker.py",
+          "sha256": "bc499fe4ce1d58739ee17cd488d0cef7309f431890b20a918a9e1d997b013c88",
+          "size": 30000
+        },
+        {
+          "path": "store.py",
+          "sha256": "a090225dcf3e62fc600575adf02cfbe0fdae2ba5351d58a952f982114984178b",
+          "size": 59462
+        },
+        {
+          "path": "tests/test_birth_recovery.py",
+          "sha256": "a3df6fdababd1c499ef06cc65609bc235b5e64b8cf7b6b9d75037704b7713e22",
+          "size": 8192
+        },
+        {
+          "path": "tests/test_caldav_transport_contract.py",
+          "sha256": "6735c6c8b7e2ef21a2afe93b7051f6b7355b1ac1b175b6630228463434512c13",
+          "size": 3498
+        },
+        {
+          "path": "tests/test_calendar.py",
+          "sha256": "eaba4bb44337da1faa1fd2153abcd37d2aa95b0d5679b50a071ac79cf5547a28",
+          "size": 20163
+        },
+        {
+          "path": "tests/test_calendar_atomic_replay.py",
+          "sha256": "6f37688318d10d03a2df2b784bd78a533ec171d02c6e8e24145e5f3a5c0ddc68",
+          "size": 15226
+        },
+        {
+          "path": "tests/test_calendar_availability.py",
+          "sha256": "c1b71a9767a6571df06c592309c8836c542a9a9b8e4188a1a6a1d3f854c8034d",
+          "size": 8359
+        },
+        {
+          "path": "tests/test_calendar_batch3.py",
+          "sha256": "7c42cdf0ed86bc2f13d07069501aed737fa7f7c3a7217dc817ab784e095a2361",
+          "size": 14496
+        },
+        {
+          "path": "tests/test_calendar_batch5.py",
+          "sha256": "345c071b0188062bc9fe699c13c6004b40134476d7b45f97321364503c9a482f",
+          "size": 10545
+        },
+        {
+          "path": "tests/test_calendar_c3_fixes.py",
+          "sha256": "a78831860f150ef0ec3ce425cd7a407d10b2325e76fd95efc9aa14cadb74bf58",
+          "size": 8289
+        },
+        {
+          "path": "tests/test_calendar_lifecycle_invariants.py",
+          "sha256": "7a919e847a0431c591178bf5b4b797c82fa89fd8283f6b363997012aec5a9371",
+          "size": 20199
+        },
+        {
+          "path": "tests/test_calendar_notify.py",
+          "sha256": "268a2c86451b7bcd02b98a069adab07ef6d5e3d61169ab964c9cfa62a2841314",
+          "size": 12164
+        },
+        {
+          "path": "tests/test_calendar_provider_divergence.py",
+          "sha256": "57031f99207b3c33f9d053e864a027f821bb1447bf2df3ede171ec0ba9c8519c",
+          "size": 30717
+        },
+        {
+          "path": "tests/test_calendar_reminder_queue.py",
+          "sha256": "0ba2ea6b6b0962636300167bbf88d5f9394aee812c9a22ab9309abe31d6169e7",
+          "size": 47801
+        },
+        {
+          "path": "tests/test_calendar_review.py",
+          "sha256": "c75ee21b055a4f5f0ea2a0a549ecbb4d018b94efbbfe285b791ec54365a5fef0",
+          "size": 27333
+        },
+        {
+          "path": "tests/test_calendar_review_r5.py",
+          "sha256": "ca552d08d2d1cd3e346577055301836658573feee19a7d1b7d88ffdee4f95273",
+          "size": 7432
+        },
+        {
+          "path": "tests/test_calendar_review_r6.py",
+          "sha256": "19abf97c7947a8ef37dd47fb03adc25577860e781954b143f46d792163bba2d8",
+          "size": 8867
+        },
+        {
+          "path": "tests/test_calendar_review_r7.py",
+          "sha256": "cb59eb383ad8674c807e7329fcdcff8c34e1c21a8663877a436c08065445cdf6",
+          "size": 6858
+        },
+        {
+          "path": "tests/test_calendar_review_r8.py",
+          "sha256": "bf9144abcfa530265276abd87374fdc1c76a02ac3862b486d48c4d1edc39188f",
+          "size": 5999
+        },
+        {
+          "path": "tests/test_calendar_round2.py",
+          "sha256": "b8a010fcc523146032829aad488de1fd4644f3ef8ad0c0f7115d7ac47941ac9f",
+          "size": 34857
+        },
+        {
+          "path": "tests/test_calendar_round3.py",
+          "sha256": "ba42a56261cd0dd9bb0a4d83f6fe000e0bc0088dda43cb7af546907e27d3fb08",
+          "size": 31240
+        },
+        {
+          "path": "tests/test_calendar_round4.py",
+          "sha256": "c59e1b1b1450242194765827efe223b282f6ec81794bee5be433b84bd18563b7",
+          "size": 30507
+        },
+        {
+          "path": "tests/test_calendar_round5.py",
+          "sha256": "903f8af4a7cad19342bbf8860a283f8d4c13bf6a0d1d877e11555b3318995d12",
+          "size": 13485
+        },
+        {
+          "path": "tests/test_cancellation_replay.py",
+          "sha256": "82e9ac0856065f170c45d5772468aae03eb039271c3ed485c6e513baa3ab4942",
+          "size": 11977
+        },
+        {
+          "path": "tests/test_conflict_resolution.py",
+          "sha256": "fb8029ddf65a759e5457811a54c5e283f110b9513b1820e2f45e094d526eb31c",
+          "size": 11841
+        },
+        {
+          "path": "tests/test_google_vault.py",
+          "sha256": "c4b9dec5578ecccf8fe1dc10eedd1852b621209fde3f966fbffef5b62c514eb6",
+          "size": 6438
+        },
+        {
+          "path": "tests/test_offline_retention.py",
+          "sha256": "ec2ede42e481881ff8e3a48f624591b4b72f17eebc32686bee47c896d1372687",
+          "size": 1656
+        },
+        {
+          "path": "tests/test_reconcile_retention.py",
+          "sha256": "47a71b4936cdb0c17ef1fa7f0e53381121a1d17b9b59877d86a6a649e50c259d",
+          "size": 2521
+        },
+        {
+          "path": "tests/test_recurrence_intake.py",
+          "sha256": "f8e97fe2f1642fcd7e801db5a79c11c2b2530efdd9ecb132c39038c35ef61afd",
+          "size": 6136
+        },
+        {
+          "path": "tests/test_resolution_dependencies.py",
+          "sha256": "0beb0d96172f563ff325d771a548feb36874deb1f85bb63791c5a761bdfb6f31",
+          "size": 6362
+        },
+        {
+          "path": "tests/test_resolution_topology.py",
+          "sha256": "36a04e9ff213f13a3343490683301e9c3f0c2303a0229da9c1a2697086efba50",
+          "size": 4805
+        },
+        {
+          "path": "tests/test_sync_atomicity.py",
+          "sha256": "0f9a4a9824c146cee4d8c070e1d4db0af306b3e5e5c9d3e1a018bac6e59e73e0",
+          "size": 16935
+        },
+        {
+          "path": "tests/test_sync_failure_isolation.py",
+          "sha256": "37de8604557cf8743b39843c988c03bc74674762557ef72d50fc596fd84cca62",
+          "size": 2670
+        },
+        {
+          "path": "tests/test_widget_browser.py",
+          "sha256": "cb8912f9588ff2d2c8d2db65b97ee51f2e92c7a4af4ec2afc5097cad3b21b0f7",
+          "size": 8461
+        },
+        {
+          "path": "tools.py",
+          "sha256": "e6f115a0d970a5f599415800705ac7b760ae9635e90b04bf4e5516932f7c6f87",
+          "size": 53873
+        },
+        {
+          "path": "widget.js",
+          "sha256": "0c7fb9411218770fa2748c679e1e8aec9cc714a91331853c5b05282bd6ce43d8",
+          "size": 43173
+        }
+      ],
+      "description": "Единый календарь владельца — свои локальные календари, Яндекс (CalDAV) и Google (личный OAuth-клиент); события, повторения, свободные окна, служебные события-распорядок, напоминания без модели, виджет День/Неделя."
     }
   ]
 }

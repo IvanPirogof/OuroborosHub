@@ -138,6 +138,18 @@ It uses real current and pre-theme module bridges with synthetic skill responses
 checks both palettes, state preservation, Canvas/SVG repaint and disposal, and
 confirms that an older bridge keeps the dark fallback.
 
+Calendar's offline provider/store suite runs in its `calendar-skill` CI job:
+
+```bash
+python -m pip install pytest pytest-subtests icalendar python-dateutil cryptography starlette
+python -m pytest -q skills/calendar/tests
+OUROBOROS_THEME_CORE_ROOT=/path/to/ouroboros python -m pytest -q tests/test_calendar_host_browser.py
+```
+
+The last command additionally requires Playwright Chromium/WebKit and tests the real
+opaque module bridge with synthetic provider state. It is opt-in, not part of the
+credential-free calendar CI job. It certifies neither live OAuth nor guest-email delivery.
+
 The Smart Lists unit suite is included in catalog CI. Its real module-bridge
 browser checks are opt-in and use isolated skill state (not installed skills):
 
