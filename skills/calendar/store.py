@@ -114,14 +114,21 @@ class Store:
             conn.close()
 
     @contextmanager
+    def _write_conn(self):
+        """Join a bound command transaction, or own one short write transaction."""
+        with self._conn() as c:
+            if self._transaction_connection is None:
+                c.execute('BEGIN IMMEDIATE')
+            yield c
+
+    @contextmanager
     def transaction(self):
         """An explicit local-only view: helpers share its connection, not this Store.
 
         The caller stages a whole command and exits before contacting providers.
         Other threads/processes using the ordinary Store keep independent connections.
         """
-        with self._conn() as c:
-            c.execute("BEGIN IMMEDIATE")
+        with self._write_conn() as c:
             local = object.__new__(Store)
             local.state_dir, local.path = self.state_dir, self.path
             local._transaction_connection = c
@@ -435,8 +442,7 @@ class Store:
         has set the display state to synced.
         """
         data = {k: v for k, v in fields.items() if k in EVENT_COLUMNS and k != "id"}
-        with self._conn() as c:
-            c.execute("BEGIN IMMEDIATE")
+        with self._write_conn() as c:
             row = c.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
             if row is None or not self._same_observation(row, observed) or self._unsettled_owner_write(c, event_id, row["sync_state"]):
                 return False
@@ -542,8 +548,7 @@ class Store:
         Display state and a requested deletion are kept; a delete parked as a conflict because the identity was
         unknown (the only conflict an identity-less delete can reach) is queued again in the same transaction.
         """
-        with self._conn() as c:
-            c.execute("BEGIN IMMEDIATE")
+        with self._write_conn() as c:
             cur = c.execute("UPDATE events SET external_id=?, href=?, etag=?, updated_at=? WHERE id=? AND external_id='' AND href=''",
                             (identity.get("external_id") or "", identity.get("href") or "", identity.get("etag") or "", _ts(), event_id))
             if cur.rowcount != 1:
@@ -572,8 +577,7 @@ class Store:
 
     def confirm_pending_delete(self, event_id: str, observed=None) -> bool:
         """Provider absence closes only the selected row and its pending delete intent, atomically."""
-        with self._conn() as c:
-            c.execute("BEGIN IMMEDIATE")
+        with self._write_conn() as c:
             row = c.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone()
             if row is None or not self._same_observation(row, observed):
                 return False

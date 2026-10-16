@@ -2284,8 +2284,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "42b4fe8784ad57757ebcdf6848d86ce4beb3c8ca2d30904a4d4d42cfab7436bd",
-          "size": 25031
+          "sha256": "dd3fed202a030435774214482e0fea4f26bc23d42be0ce8584d493c9d630c665",
+          "size": 26125
         },
         {
           "path": "conflicts.py",
@@ -2299,8 +2299,8 @@
         },
         {
           "path": "ops.py",
-          "sha256": "1569d3257062badb23952d22b69cf72f1fb8c46efb74fb4e3c096095fb995356",
-          "size": 83878
+          "sha256": "60713312994a93a0b198151089b072a424a2d489620131b93acb12e6c2158320",
+          "size": 84577
         },
         {
           "path": "plugin.py",
@@ -2309,8 +2309,8 @@
         },
         {
           "path": "providers.py",
-          "sha256": "ab718829e63ea114c05701e791a303e580448fabbf050a1565776df8c31bc09b",
-          "size": 38355
+          "sha256": "51bb64cd4e74fba9919666204e4949988036903d9cf689aebbc182eaecace45c",
+          "size": 38512
         },
         {
           "path": "providers_google.py",
@@ -2329,13 +2329,13 @@
         },
         {
           "path": "scripts/worker.py",
-          "sha256": "db6d4efd97882e09fe47acc3486bec74dd4b12c4f45399ad9692a465779dca9c",
-          "size": 26339
+          "sha256": "e75f80da0df50691842147da63a3bfdcfb78a2a60f15361a39409d7897c6781c",
+          "size": 27497
         },
         {
           "path": "store.py",
-          "sha256": "773657e1a9fb5295d006e4b0004a5011542ae9a4621d5509fabd31aaa67177e2",
-          "size": 58722
+          "sha256": "a31c411f0ee4795f62c38239c191c52868327e34474ffc11e3bb781cc681b3e3",
+          "size": 58864
         },
         {
           "path": "tests/test_birth_recovery.py",
@@ -2408,6 +2408,11 @@
           "size": 7432
         },
         {
+          "path": "tests/test_calendar_review_r6.py",
+          "sha256": "19abf97c7947a8ef37dd47fb03adc25577860e781954b143f46d792163bba2d8",
+          "size": 8867
+        },
+        {
           "path": "tests/test_calendar_round2.py",
           "sha256": "b8a010fcc523146032829aad488de1fd4644f3ef8ad0c0f7115d7ac47941ac9f",
           "size": 34857
@@ -2459,8 +2464,8 @@
         },
         {
           "path": "tests/test_sync_atomicity.py",
-          "sha256": "08cb58bb730fc3377f101f7aaeef919f0da6b79ed4ccb7c177d04682edc6c36b",
-          "size": 16333
+          "sha256": "59dea8d75c8b6901f8556c8e43ce04e1f0080696b6bb3c76ec791b6794f8514d",
+          "size": 16939
         },
         {
           "path": "tests/test_widget_browser.py",

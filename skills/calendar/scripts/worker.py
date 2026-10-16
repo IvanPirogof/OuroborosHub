@@ -136,12 +136,61 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
     """
     basis = store.sync_basis(cal['id'])
     rows, next_cursor, kind, extra = adapter.fetch(cal, cursor, tz=tz)
+    awaiting = _awaiting_identity(store, adapter, cal)
+    result = ops._finish_command(store, providers, _stage_feed, 'companion',
+                                 cal, rows, basis, awaiting, kind, next_cursor)
+    upserts, deleted, propagated = result['upserts'], result['deleted'], result['propagated']
+    next_cursor = result['next_cursor']
+    incremental = bool(cursor) and kind == 'google_sync_token'
+    if kind == "google_sync_token":
+        # Google: cancelled ids in the (incremental) feed are the confirmed deletions (roast Fable F7).
+        for ext_id in extra:
+            existing = store.find_by_external(cal["id"], external_id=ext_id)
+            if existing is not None and not existing.get("deleted_at") and (existing.get("sync_state") not in ("pending", "conflict") or store.delete_requested(existing["id"])):
+                deleted += _confirmed_deletion(store, providers, existing, basis.get(existing['id']), basis) if existing['id'] in basis else 0
+    if not incremental and kind == "google_sync_token":
+        # The initial feed is time-bounded: absence alone is not a deletion.
+        seen = {r.get("external_id") for r in rows} | set(extra)
+        with store._conn() as c:
+            known = [dict(r) for r in c.execute("SELECT * FROM events WHERE calendar_id=? AND master_id='' AND external_id!='' AND deleted_at IS NULL", (cal["id"],))]
+        for local in known:
+            if local["external_id"] in seen or (local.get("sync_state") in ("pending", "conflict", "failed") and not store.delete_requested(local["id"])):
+                continue
+            try:
+                if adapter.exists_event(cal, local["external_id"]):
+                    continue
+            except ops.ProviderError:
+                continue
+            deleted += _confirmed_deletion(store, providers, local, basis.get(local['id']), basis) if local['id'] in basis else 0
+    if not incremental and kind != "google_sync_token":
+        # CalDAV window: rows inside the window whose resource is gone from the server.
+        seen_hrefs = set(extra)
+        for local in store.window(now_utc() - timedelta(days=30), now_utc() + timedelta(days=400), [cal["id"]], include_hidden=True, include_masters=True):
+            if local.get("master_id") or not local.get("href") or local["href"] in seen_hrefs:
+                continue
+            if local.get("sync_state") in ("pending", "conflict") and not store.delete_requested(local["id"]):
+                continue
+            try:
+                still_there = adapter.exists(local["href"])
+            except ops.ProviderError:
+                continue  # an access problem is not a deletion
+            if still_there:
+                continue
+            deleted += _confirmed_deletion(store, providers, local, basis.get(local['id']), basis) if local['id'] in basis else 0
+    return upserts, deleted, propagated, next_cursor, kind
+
+
+def _stage_feed(store, cal, rows, basis, awaiting, kind, next_cursor):
+    """Commit accepted source snapshots and their copy intents together, with no network.
+
+    A failure anywhere before commit retains the old source ETag, so the next
+    fetch can replay the observation. After commit, durable intents own delivery.
+    """
     protected_masters = set()
-    incremental = bool(cursor) and kind == "google_sync_token"
     upserts = deleted = propagated = 0
+    assignments = []
     masters: Dict[str, str] = {}
     copy_commands = {}  # all parts of this feed for one destination stage together
-    awaiting = _awaiting_identity(store, adapter, cal)
     refreshed: Dict[str, str] = {}   # CalDAV master id → UID, for series whose whole resource was re-read this pass
     for row in rows:
         if row.get("recurrence_id"):
@@ -159,7 +208,10 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
                 if existing.get("sync_state") == "pending_delete" or store.delete_requested(existing["id"]):
                     deleted += int(store.confirm_pending_delete(existing["id"], basis[existing['id']])) if existing['id'] in basis else 0
                 elif existing.get("sync_state") not in ("pending", "conflict", "failed"):
-                    deleted += _confirmed_deletion(store, providers, existing, basis.get(existing['id']), basis) if existing['id'] in basis else 0
+                    if existing['id'] in basis:
+                        result = _stage_absent_cascade(store, existing['id'], basis[existing['id']], basis)
+                        deleted += int(result.get('status') == 'ok')
+                        assignments.extend(result.get('assignments', []))
             continue
         if existing is None:
             saved = store.insert_provider_master({k: v for k, v in row.items() if k != "master_external_id"})
@@ -211,6 +263,9 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
             continue
         if master_id in protected_masters:
             continue
+        master_row = store.get_event(master_id)
+        if row['recurrence_id'] in ops.excluded_slots(master_row or {}):
+            continue  # a stale instance cannot undo the master's explicit EXDATE
         exc = next((e for e in store.exceptions_for(master_id) if e.get("recurrence_id") == row["recurrence_id"]), None)
         payload = {k: v for k, v in row.items() if k != "master_external_id"}
         payload.update({"master_id": master_id, "raw_payload": ""})
@@ -251,45 +306,12 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
         for exc in store.exceptions_for(master_id):
             if exc.get("recurrence_id") not in present and exc['id'] in basis:
                 store.retire_synced_exception(exc["id"], observed=basis[exc['id']])
-    if kind == "google_sync_token":
-        # Google: cancelled ids in the (incremental) feed are the confirmed deletions (roast Fable F7).
-        for ext_id in extra:
-            existing = store.find_by_external(cal["id"], external_id=ext_id)
-            if existing is not None and not existing.get("deleted_at") and (existing.get("sync_state") not in ("pending", "conflict") or store.delete_requested(existing["id"])):
-                deleted += _confirmed_deletion(store, providers, existing, basis.get(existing['id']), basis) if existing['id'] in basis else 0
-    if not incremental and kind == "google_sync_token":
-        # The initial feed is time-bounded: absence alone is not a deletion.
-        seen = {r.get("external_id") for r in rows} | set(extra)
-        with store._conn() as c:
-            known = [dict(r) for r in c.execute("SELECT * FROM events WHERE calendar_id=? AND master_id='' AND external_id!='' AND deleted_at IS NULL", (cal["id"],))]
-        for local in known:
-            if local["external_id"] in seen or (local.get("sync_state") in ("pending", "conflict", "failed") and not store.delete_requested(local["id"])):
-                continue
-            try:
-                if adapter.exists_event(cal, local["external_id"]):
-                    continue
-            except ops.ProviderError:
-                continue
-            deleted += _confirmed_deletion(store, providers, local, basis.get(local['id']), basis) if local['id'] in basis else 0
-    if not incremental and kind != "google_sync_token":
-        # CalDAV window: rows inside the window whose resource is gone from the server.
-        seen_hrefs = set(extra)
-        for local in store.window(now_utc() - timedelta(days=30), now_utc() + timedelta(days=400), [cal["id"]], include_hidden=True, include_masters=True):
-            if local.get("master_id") or not local.get("href") or local["href"] in seen_hrefs:
-                continue
-            if local.get("sync_state") in ("pending", "conflict") and not store.delete_requested(local["id"]):
-                continue
-            try:
-                still_there = adapter.exists(local["href"])
-            except ops.ProviderError:
-                continue  # an access problem is not a deletion
-            if still_there:
-                continue
-            deleted += _confirmed_deletion(store, providers, local, basis.get(local['id']), basis) if local['id'] in basis else 0
     for root, commands in copy_commands.items():
-        result = ops._finish_command(store, providers, _stage_sync_copy, 'companion', basis, root, commands)
+        result = _stage_sync_copy(store, basis, root, commands)
         propagated += int(result.get('status') == 'ok')
-    return upserts, deleted, propagated, next_cursor, kind
+        assignments.extend(result.get('assignments', []))
+    return {'upserts': upserts, 'deleted': deleted, 'propagated': propagated,
+            'next_cursor': next_cursor, 'assignments': assignments}
 
 
 def _awaiting_identity(store: Store, adapter, cal: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:

@@ -320,6 +320,8 @@ def free_windows(hard: List[Tuple[datetime, datetime]], start: datetime, end: da
 
 def _finish_command(store, providers, stage, owner, *args, **kwargs):
     """Commit all desired rows and intents before attempting provider I/O."""
+    if store._transaction_connection is not None:
+        raise RuntimeError('provider dispatch requires an ordinary Store, not a transaction view')
     with store.transaction() as local:
         result = stage(local, *args, **kwargs)
     assignments = list(result.get("assignments", [])) + list(result.get("added", []))
@@ -461,7 +463,7 @@ def _stage_update_event(store, event_id: str, changes: Dict[str, Any], scope: st
         _apply_changes(store, row, changes)
         targets.append(store.get_event(row["id"]))
         if series_delta:
-            targets.extend(_shift_series_rows(store, row, series_delta))   # after the master: they resolve through it
+            targets.extend(_shift_series_rows(store, row, series_delta, changes))   # after the master: they resolve through it
     # Linked copies: only time moves to busy copies; full copies get everything but attendees/reminders.
     if propagate and row.get("link_group_id"):
         sibling_changes = _sibling_changes(changes)
@@ -482,7 +484,7 @@ def _stage_update_event(store, event_id: str, changes: Dict[str, Any], scope: st
                 _apply_changes(store, sib, allowed)
                 targets.append(store.get_event(sib["id"]))
                 if sib_delta:
-                    targets.extend(_shift_series_rows(store, sib, sib_delta))
+                    targets.extend(_shift_series_rows(store, sib, sib_delta, allowed))
     rsvp_only = set(changes.keys()) == {"my_response"}
     previous_by_calendar = {}
     for target in targets:
@@ -709,8 +711,12 @@ def _shift_instant(dt: datetime, delta: timedelta, all_day: bool, tz) -> datetim
     return datetime.combine(local, datetime.min.time(), tzinfo=tz)
 
 
-def _shift_series_rows(store, master: Dict[str, Any], delta: timedelta) -> List[Dict[str, Any]]:
-    """The series moved by ``delta``: excluded/extra dates and every stored exception move with it (their slot, not their edits)."""
+def _shift_series_rows(store, master: Dict[str, Any], delta: timedelta, changes=None) -> List[Dict[str, Any]]:
+    """Move relative slots, but keep explicitly supplied absolute date sets.
+
+    Provider snapshots may replace EXDATE/RDATE while moving the anchor. Owner
+    moves that omit those sets still shift the existing sets with the series.
+    """
     from model import get_tz
     tz = get_tz(master.get("tz") or "")
     all_day = bool(master.get("all_day"))
@@ -721,9 +727,9 @@ def _shift_series_rows(store, master: Dict[str, Any], delta: timedelta) -> List[
             out.append(iso_utc(_shift_instant(dt, delta, all_day, tz)) if dt else x)
         return ",".join(v for v in out if v)
     fields = {}
-    if master.get("exdates"):
+    if master.get("exdates") and 'exdates' not in (changes or {}):
         fields["exdates"] = shifted(master["exdates"])
-    if master.get("rdates"):
+    if master.get("rdates") and 'rdates' not in (changes or {}):
         fields["rdates"] = shifted(master["rdates"])
     if fields:
         store.update_event(master["id"], fields)
@@ -1130,6 +1136,12 @@ def _matches_unversioned_baseline(payload, remote, adapter):
         field = {'attendees': 'attendees_json', 'reminders': 'reminders_json'}.get(key, key)
         if field.endswith('_json'):
             old, new = json.loads(baseline.get(field) or '[]'), json.loads(remote.get(field) or '[]')
+            if old != new:
+                return False
+        elif field == 'availability':
+            # Google has transparent/opaque, not the local soft-routine state.
+            old = AVAIL_FREE if baseline.get(field) == AVAIL_FREE else AVAIL_BUSY
+            new = AVAIL_FREE if remote.get(field) == AVAIL_FREE else AVAIL_BUSY
             if old != new:
                 return False
         elif (baseline.get(field) or '') != (remote.get(field) or ''):

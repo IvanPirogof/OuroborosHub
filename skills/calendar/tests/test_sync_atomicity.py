@@ -12,6 +12,7 @@ import os
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKILL = os.path.dirname(HERE)
@@ -45,6 +46,25 @@ class Seam:
             return result
 
         setattr(obj, name, wrapper)
+
+
+class BeforeTransaction:
+    """Inject after fetch, before the whole-feed write boundary.
+
+    The old instance-level lookup hook no longer runs on the bound Store view.
+    Separate-connection tests additionally check the held-transaction race.
+    """
+    def __init__(self, store, action):
+        self.fired = []
+        real = store.transaction
+        @contextmanager
+        def wrapped():
+            if not self.fired:
+                self.fired.append('transaction')
+                action()
+            with real() as view:
+                yield view
+        store.transaction = wrapped
 
 
 class FeedAdapter:
@@ -230,9 +250,9 @@ class ExceptionRetirementRaceTests(SyncCase):
 
     def test_refreshed_series_cannot_retire_an_override_the_owner_just_edited(self):
         master, slot, override = self.series()
-        seam = Seam(self.ctx.store, "exceptions_for", lambda: self.owner_edit(f"{master['id']}@{slot}", scope="this"))
+        seam = BeforeTransaction(self.ctx.store, lambda: self.owner_edit(f"{master['id']}@{slot}", scope="this"))
         self.refreshed_sync(master)
-        self.assertEqual(seam.fired, ["exceptions_for"])
+        self.assertEqual(seam.fired, ["transaction"])
         kept = self.ctx.store.get_event(override["id"])
         self.assertIsNone(kept["deleted_at"])
         self.assertEqual((kept["title"], kept["sync_state"]), ("Owner edit", "pending"))
@@ -249,11 +269,11 @@ class ExceptionImportRaceTests(SyncCase):
 
     def test_import_cannot_attach_a_stale_slot_after_an_owner_series_move(self):
         master, slot, _ = self.series(with_override=False)
-        seam = Seam(self.ctx.store, 'exceptions_for', lambda: ops.update_event(
+        seam = BeforeTransaction(self.ctx.store, lambda: ops.update_event(
             self.ctx.store, self.offline, master['id'],
             {'start_utc': iso_utc(parse_stored(master['start_utc']) + timedelta(hours=1))}, scope='all'))
         self.sync(self.feed(master, slot))
-        self.assertEqual(seam.fired, ['exceptions_for'])
+        self.assertEqual(seam.fired, ['transaction'])
         self.assertEqual(self.ctx.store.get_event(master['id'])['sync_state'], 'pending')
         self.assertEqual(self.ctx.store.exceptions_for(master['id']), [])
 
@@ -262,19 +282,19 @@ class ExceptionImportRaceTests(SyncCase):
 
     def test_owner_override_created_after_the_lookup_is_not_duplicated_by_the_import(self):
         master, slot, _ = self.series(with_override=False)
-        seam = Seam(self.ctx.store, "exceptions_for", lambda: self.owner_edit(f"{master['id']}@{slot}", scope="this"))
+        seam = BeforeTransaction(self.ctx.store, lambda: self.owner_edit(f"{master['id']}@{slot}", scope="this"))
         result = self.sync(self.feed(master, slot))
-        self.assertEqual(seam.fired, ["exceptions_for"])
+        self.assertEqual(seam.fired, ["transaction"])
         rows = self.ctx.store.exceptions_for(master["id"])
         self.assertEqual([(r["title"], r["sync_state"]) for r in rows], [("Owner edit", "pending")])
         self.assertEqual(result[0], 0)
 
     def test_import_into_a_series_the_owner_just_deleted_is_refused(self):
         master, slot, _ = self.series(with_override=False)
-        seam = Seam(self.ctx.store, "exceptions_for",
+        seam = BeforeTransaction(self.ctx.store,
                     lambda: ops.delete_event(self.ctx.store, self.offline, master["id"], scope="all", owner="test"))
         result = self.sync(self.feed(master, slot))
-        self.assertEqual(seam.fired, ["exceptions_for"])
+        self.assertEqual(seam.fired, ["transaction"])
         self.assertEqual(self.ctx.store.get_event(master["id"])["sync_state"], "pending_delete")   # the injection took effect
         self.assertEqual(self.ctx.store.exceptions_for(master["id"]), [])
         self.assertEqual(result[0], 0)

@@ -222,7 +222,8 @@ def _listify(value: Any) -> List[Any]:
     return value if isinstance(value, list) else [value]
 
 
-def row_to_ics(event: Dict[str, Any], prodid: str = "-//Ouroboros//calendar//RU", mute_alarms: bool = False) -> str:
+def row_to_ics(event: Dict[str, Any], prodid: str = "-//Ouroboros//calendar//RU", mute_alarms: bool = False,
+               replace_exdates: bool = False) -> str:
     """Build VCALENDAR from a row; when the row carries the provider's original text, edit it in place.
 
     ``mute_alarms`` = the owner switched «напоминает Уроборос» on for this calendar: no VALARM goes to the provider.
@@ -268,7 +269,7 @@ def row_to_ics(event: Dict[str, Any], prodid: str = "-//Ouroboros//calendar//RU"
     except (TypeError, ValueError):
         seq = 1
     live_exdates: List[str] = []
-    if vevent.get("EXDATE") is not None and event.get("rrule"):
+    if not replace_exdates and vevent.get("EXDATE") is not None and event.get("rrule"):
         try:
             live_start = _as_utc(vevent.decoded("DTSTART"), tz)[0]
             live_rule = vevent.get("RRULE").to_ical().decode("utf-8") if vevent.get("RRULE") is not None else ""
@@ -582,7 +583,8 @@ class YandexAdapter:
         headers = {"Content-Type": "text/calendar; charset=utf-8"}
         if expected_etag:
             headers["If-Match"] = expected_etag
-        sent = row_to_ics(event, mute_alarms=bool(payload.get("mute_provider_reminders")))
+        sent = row_to_ics(event, mute_alarms=bool(payload.get("mute_provider_reminders")),
+                          replace_exdates='exdates' in (payload.get('changes') or {}))
         _, resp_headers, _ = self._request("PUT", href, sent, headers)
         return {"etag": self._write_version(href, sent, resp_headers)}
 
