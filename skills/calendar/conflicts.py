@@ -167,20 +167,35 @@ def inspect(ctx, event_id):
     return _load(ctx, event_id)[2]
 
 
+def _rollback_rows(state):
+    """Earliest preimages of the unconfirmed command suffix, not just its head.
+
+    A completed prefix has already changed the provider and is not rolled back.
+    Later dependent commands may introduce topology their predecessor never saw.
+    """
+    before, created = {}, set()
+    for intent in state['intents']:
+        if intent['id'] not in state['command_ids'] or intent['state'] not in _UNFINISHED:
+            continue
+        payload = _payload(intent)
+        for row in payload.get('restore_rows', []):
+            before.setdefault(row['id'], row)
+        created.update(payload.get('created_ids', []))
+    return before, created
+
+
 def _read_targets(state, adapter, current, templates):
     rows = {r['id']: r for r in state['rows']}
-    command = [i for i in state['intents'] if i['id'] in state['command_ids']]
-    first = _payload(command[0]) if command else {}
-    rollback = bool(command and command[0]['state'] != 'done')
-    before = {r['id']: r for r in first.get('restore_rows', [])} if rollback else {}
-    targets = {state['event']['id']: {k: v for k, v in current.items() if k != 'targets'}}
+    before, created = _rollback_rows(state)
+    targets = {state['event']['id']: {**{k: v for k, v in current.items() if k != 'targets'},
+                                     'source_master_id': state['event'].get('master_id') or ''}}
     for intent in templates:
         eid = intent['event_id']
         if eid in targets:
             continue
         row = before.get(eid) or rows[eid]
         creates = [i for i in state['intents'] if i['event_id'] == eid and i['kind'] == 'create']
-        if rollback and eid in first.get('created_ids', []) and creates and all(i['attempts'] == 0 for i in creates):
+        if eid in created and creates and all(i['attempts'] == 0 for i in creates):
             targets[eid] = {'event': None, 'etag': '', 'never_sent': True}
             continue
         master = before.get(row.get('master_id')) or rows.get(row.get('master_id'), {})
@@ -192,6 +207,7 @@ def _read_targets(state, adapter, current, templates):
             if exc.kind not in ('not_found', 'gone'):
                 raise
             targets[eid] = {'event': None, 'etag': ''}
+        targets[eid]['source_master_id'] = row.get('master_id') or ''
     return targets
 
 
@@ -209,7 +225,15 @@ def _clones(state, current, templates, new_op):
         payload['desired'] = {k: v for k, v in desired.items() if k in EVENT_COLUMNS and k != 'raw_payload'}
         expected = original['expected_etag']
         observed = current['targets'].get(original['event_id'], {})
-        if observed.get('etag'):
+        # Inspection may read this occurrence at its old series address. A
+        # retry targets the staged new resource: its create ACK binds the
+        # CalDAV version, and Google resolves the new instance after creation.
+        moving = payload.get('relocated_from_master') and (
+            observed.get('source_master_id') != desired.get('master_id'))
+        if moving:
+            expected = ''
+            payload.pop('_provider_external_id', None)
+        elif observed.get('etag'):
             expected = observed['etag']
             if state['calendar']['provider'] == 'google':
                 payload['_provider_external_id'] = (observed.get('event') or {}).get('external_id') or ''
@@ -226,15 +250,14 @@ def _accept_provider(local, state, current, templates):
     affected = {i['event_id'] for i in templates}
     retired = {i['id'] for i in templates}
     independent = {i['event_id'] for i in state['intents'] if i['state'] in _UNFINISHED and i['id'] not in retired}
-    command = [i for i in state['intents'] if i['id'] in state['command_ids']]
-    first = _payload(command[0]) if command else {}
-    restore = first.get('restore_rows', []) if command and command[0]['state'] != 'done' else []
+    before_rows, created = _rollback_rows(state)
+    restore = list(before_rows.values())
     for before in restore:
         if before['id'] in affected:
             local.update_event(before['id'], {k: v for k, v in before.items() if k != 'id'})
     # Retain history but withdraw a segment whose prerequisite never succeeded.
     # A possibly sent create is never inferred absent from an empty identity.
-    for eid in first.get('created_ids', []):
+    for eid in created:
         if eid not in affected or eid == row['id']:
             continue
         creates = [i for i in state['intents'] if i['event_id'] == eid and i['kind'] == 'create']
@@ -246,7 +269,7 @@ def _accept_provider(local, state, current, templates):
     for eid in affected:
         if eid in independent:
             # The before-image contains independently accepted unsent content.
-            before = next((r for r in first.get('restore_rows', []) if r['id'] == eid), None)
+            before = before_rows.get(eid)
             if before:
                 local.update_event(eid, {k: v for k, v in before.items() if k not in ('id','external_id','href','etag')})
             local.update_event(eid, {'sync_state': 'pending'})

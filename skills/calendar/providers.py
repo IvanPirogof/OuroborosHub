@@ -538,7 +538,8 @@ class YandexAdapter:
     def _create(self, calendar: Dict[str, Any], event: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
         identity = self.created_identity(calendar, event)
         uid, href = identity["external_id"], identity["href"]
-        ics = row_to_ics({**event, "raw_payload": ""}, mute_alarms=bool(payload.get("mute_provider_reminders")))
+        ics = row_to_ics({**event, "raw_payload": ""}, mute_alarms=bool(payload.get("mute_provider_reminders")),
+                         cancelled_slots=payload.get('cancelled_slots'))
         try:
             _, headers, _ = self._request("PUT", href, ics, {"Content-Type": "text/calendar; charset=utf-8", "If-None-Match": "*"})
         except ProviderError as exc:

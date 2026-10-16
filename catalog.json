@@ -2279,18 +2279,18 @@
     {
       "slug": "calendar",
       "name": "calendar",
-      "version": "1.0.12",
+      "version": "1.0.13",
       "type": "extension",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "daed6ef50b62e0ddd72cff307066fbb0edd6bafdecc432e2b3a505c2f8f0cf6b",
-          "size": 26922
+          "sha256": "f9c8c2987858d2b10a59504e082e8c96e7ab5eaeac54ea868183685efac47987",
+          "size": 27620
         },
         {
           "path": "conflicts.py",
-          "sha256": "11e73bb310a5efae8ebf10adf864c2f162e795b58c84d63bbef9fa0713b4b110",
-          "size": 17847
+          "sha256": "d2c740c7156147dbdc05b0b4bf037caee8ea6961147034216cec1891a1e5d704",
+          "size": 18675
         },
         {
           "path": "model.py",
@@ -2299,8 +2299,8 @@
         },
         {
           "path": "ops.py",
-          "sha256": "9e29389b054e6d91264fe30bf62d5196efc5df586b0a4258aa8feda0989bc1e7",
-          "size": 85487
+          "sha256": "96a7eaa75d88155f11f01492c3c0c329d5c6c57497ad7e0ba6bea7d3652c697b",
+          "size": 84873
         },
         {
           "path": "plugin.py",
@@ -2309,8 +2309,8 @@
         },
         {
           "path": "providers.py",
-          "sha256": "d6f0f81f7ed4090e1fc8ff4c4006f46ab2d64dc392fba9682dcaabfd7781488b",
-          "size": 39225
+          "sha256": "a37391cacf6186feefbfcc616cd29134cba71936070c9f4ac959178b825f09dc",
+          "size": 39298
         },
         {
           "path": "providers_google.py",
@@ -2329,13 +2329,13 @@
         },
         {
           "path": "scripts/worker.py",
-          "sha256": "e64de30c13b5f9c8b2f620ea701ea9ff673cfefbcb6649852297def799d8b2f5",
-          "size": 28564
+          "sha256": "1197e360dc61132d24b03524ad38cb7a567eddac616b6a06b8b2393c5155b432",
+          "size": 28735
         },
         {
           "path": "store.py",
-          "sha256": "a31c411f0ee4795f62c38239c191c52868327e34474ffc11e3bb781cc681b3e3",
-          "size": 58864
+          "sha256": "a090225dcf3e62fc600575adf02cfbe0fdae2ba5351d58a952f982114984178b",
+          "size": 59462
         },
         {
           "path": "tests/test_birth_recovery.py",
@@ -2443,6 +2443,11 @@
           "size": 13485
         },
         {
+          "path": "tests/test_cancellation_replay.py",
+          "sha256": "82e9ac0856065f170c45d5772468aae03eb039271c3ed485c6e513baa3ab4942",
+          "size": 11977
+        },
+        {
           "path": "tests/test_conflict_resolution.py",
           "sha256": "fb8029ddf65a759e5457811a54c5e283f110b9513b1820e2f45e094d526eb31c",
           "size": 11841
@@ -2471,6 +2476,11 @@
           "path": "tests/test_resolution_dependencies.py",
           "sha256": "0beb0d96172f563ff325d771a548feb36874deb1f85bb63791c5a761bdfb6f31",
           "size": 6362
+        },
+        {
+          "path": "tests/test_resolution_topology.py",
+          "sha256": "36a04e9ff213f13a3343490683301e9c3f0c2303a0229da9c1a2697086efba50",
+          "size": 4805
         },
         {
           "path": "tests/test_sync_atomicity.py",

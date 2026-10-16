@@ -421,9 +421,11 @@ class Store:
     def sync_basis(self, calendar_id):
         """Local rows before the network read; a late feed cannot undo a newer ACK."""
         with self._conn() as c:
-            return {r['id']: dict(r) for r in c.execute('SELECT * FROM events WHERE calendar_id=? OR '
-                    "(link_group_id!='' AND link_group_id IN (SELECT link_group_id FROM events WHERE calendar_id=?))",
-                    (calendar_id, calendar_id))}
+            return {r['id']: dict(r) for r in c.execute(
+                "WITH roots AS (SELECT id FROM events WHERE calendar_id=? OR "
+                "(link_group_id!='' AND link_group_id IN (SELECT link_group_id FROM events WHERE calendar_id=?))) "
+                "SELECT * FROM events WHERE id IN roots OR master_id IN roots",
+                (calendar_id, calendar_id))}
 
     @staticmethod
     def _same_observation(row, observed):
@@ -733,6 +735,12 @@ class Store:
                               if k in EVENT_COLUMNS and k != 'raw_payload'}
         event = payload['desired'] or {}
         calendar = self.get_calendar(calendar_id) or {}
+        if calendar.get('provider') == 'yandex' and event.get('rrule') and not event.get('master_id'):
+            # Every master write serializes the same complete desired family.
+            # A queued cancellation is already accepted local intent, even
+            # before its provider ACK; later commands must not resurrect it.
+            payload['cancelled_slots'] = sorted({e['recurrence_id'] for e in self.exceptions_for(event_id)
+                if e.get('status') == 'cancelled'})
         payload['resource_id'] = ((event.get('master_id') or event_id)
                                   if calendar.get('provider') == 'yandex' else event_id)
         row = {"id": new_id("int"), "kind": kind, "account_id": account_id, "calendar_id": calendar_id, "event_id": event_id,

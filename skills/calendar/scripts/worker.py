@@ -110,7 +110,7 @@ def sync_account(store: Store, providers: Providers, account: Dict[str, Any], tz
             if kind == "google_sync_token":
                 store.set_sync_state(cal["id"], cursor=next_cursor, cursor_kind=kind, last_ok_at=iso_utc(now_utc()), last_error=parse_note)
             else:
-                store.set_sync_state(cal["id"], cursor=ctag, cursor_kind="ctag" if ctag else "window", last_ok_at=iso_utc(now_utc()), last_error=parse_note)
+                store.set_sync_state(cal["id"], cursor=ctag if next_cursor is not None else '', cursor_kind="ctag" if ctag else "window", last_ok_at=iso_utc(now_utc()), last_error=parse_note)
         parse_total = len(report.get("parse_errors") or [])
         store.set_account_status(account["id"], "ok", f"не разобрано событий: {parse_total}" if parse_total else "", synced=True)
     except ops.ProviderError as exc:
@@ -141,13 +141,20 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
                                  cal, rows, basis, awaiting, kind, next_cursor)
     upserts, deleted, propagated = result['upserts'], result['deleted'], result['propagated']
     next_cursor = result['next_cursor']
+    retry_required = result['retry_required']
+    def confirmed(local):
+        nonlocal retry_required
+        count = _confirmed_deletion(store, providers, local, basis.get(local['id']), basis) if local['id'] in basis else 0
+        if not count:
+            retry_required = True
+        return count
     incremental = bool(cursor) and kind == 'google_sync_token'
     if kind == "google_sync_token":
         # Google: cancelled ids in the (incremental) feed are the confirmed deletions (roast Fable F7).
         for ext_id in extra:
             existing = store.find_by_external(cal["id"], external_id=ext_id)
-            if existing is not None and not existing.get("deleted_at") and (existing.get("sync_state") not in ("pending", "conflict") or store.delete_requested(existing["id"])):
-                deleted += _confirmed_deletion(store, providers, existing, basis.get(existing['id']), basis) if existing['id'] in basis else 0
+            if existing is not None and not existing.get("deleted_at"):
+                deleted += confirmed(existing)
     if not incremental and kind == "google_sync_token":
         # The initial feed is time-bounded: absence alone is not a deletion.
         seen = {r.get("external_id") for r in rows} | set(extra)
@@ -161,7 +168,7 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
                     continue
             except ops.ProviderError:
                 continue
-            deleted += _confirmed_deletion(store, providers, local, basis.get(local['id']), basis) if local['id'] in basis else 0
+            deleted += confirmed(local)
     if not incremental and kind != "google_sync_token":
         # CalDAV window: rows inside the window whose resource is gone from the server.
         seen_hrefs = set(extra)
@@ -176,7 +183,9 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
                 continue  # an access problem is not a deletion
             if still_there:
                 continue
-            deleted += _confirmed_deletion(store, providers, local, basis.get(local['id']), basis) if local['id'] in basis else 0
+            deleted += confirmed(local)
+    if retry_required:
+        next_cursor = '' if kind == 'google_sync_token' else None
     return upserts, deleted, propagated, next_cursor, kind
 
 
@@ -187,6 +196,7 @@ def _stage_feed(store, cal, rows, basis, awaiting, kind, next_cursor):
     fetch can replay the observation. After commit, durable intents own delivery.
     """
     protected_masters = set()
+    retry_required = False
     upserts = deleted = propagated = 0
     assignments = []
     masters: Dict[str, str] = {}
@@ -209,9 +219,12 @@ def _stage_feed(store, cal, rows, basis, awaiting, kind, next_cursor):
                     deleted += int(store.confirm_pending_delete(existing["id"], basis[existing['id']])) if existing['id'] in basis else 0
                 elif existing.get("sync_state") not in ("pending", "conflict", "failed"):
                     if existing['id'] in basis:
-                        result = _stage_absent_cascade(store, existing['id'], basis[existing['id']], basis, source_cancelled=True)
+                        result = _stage_absent_cascade(store, existing['id'], basis[existing['id']], basis)
                         deleted += int(result.get('status') == 'ok')
+                        retry_required |= result.get('status') != 'ok'
                         assignments.extend(result.get('assignments', []))
+                if not (store.get_event(existing['id']) or {}).get('deleted_at'):
+                    retry_required = True
             continue
         if existing is None:
             saved = store.insert_provider_master({k: v for k, v in row.items() if k != "master_external_id"})
@@ -315,9 +328,10 @@ def _stage_feed(store, cal, rows, basis, awaiting, kind, next_cursor):
     for root, commands in copy_commands.items():
         result = _stage_sync_copy(store, basis, root, commands)
         propagated += int(result.get('status') == 'ok')
+        retry_required |= result.get('status') != 'ok'
         assignments.extend(result.get('assignments', []))
     return {'upserts': upserts, 'deleted': deleted, 'propagated': propagated,
-            'next_cursor': next_cursor, 'assignments': assignments}
+            'next_cursor': next_cursor, 'assignments': assignments, 'retry_required': retry_required}
 
 
 def _awaiting_identity(store: Store, adapter, cal: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -411,7 +425,7 @@ def _confirmed_deletion(store: Store, providers: Providers, local: Dict[str, Any
     return int(staged.get("status") == "ok")
 
 
-def _stage_absent_cascade(view, event_id: str, observed: Dict[str, Any], basis, source_cancelled=False) -> Dict[str, Any]:
+def _stage_absent_cascade(view, event_id: str, observed: Dict[str, Any], basis) -> Dict[str, Any]:
     """Runs inside ops._finish_command's write transaction: the guard and the linked-copy cascade commit together or not at all."""
     if view.provider_absence_blocker(event_id, observed):
         return {"status": "protected", "assignments": []}
@@ -420,16 +434,14 @@ def _stage_absent_cascade(view, event_id: str, observed: Dict[str, Any], basis, 
     if any(not _copy_unchanged(view, sibling['id'], basis)
            for sibling in siblings):
         return {'status': 'protected', 'assignments': []}
-    if source_cancelled or not siblings:
-        # A provider-confirmed cancellation is not a request to DELETE that
-        # same resource. Former link membership alone also implies no cascade.
-        if not view.retire_provider_absent(event_id, observed):
-            return {'status': 'protected', 'assignments': []}
-        assignments = []
-        for sibling in siblings:
-            assignments.extend(ops._stage_delete_event(view, sibling['id'], scope=SCOPE_ALL, cascade=False).get('assignments', []))
-        return {'status': 'ok', 'assignments': assignments}
-    return ops._stage_delete_event(view, event_id, scope=SCOPE_ALL)
+    # Every caller already has provider-confirmed absence. Retire that
+    # observation locally; only the still-existing copies need remote writes.
+    if not view.retire_provider_absent(event_id, observed):
+        return {'status': 'protected', 'assignments': []}
+    assignments = []
+    for sibling in siblings:
+        assignments.extend(ops._stage_delete_event(view, sibling['id'], scope=SCOPE_ALL, cascade=False).get('assignments', []))
+    return {'status': 'ok', 'assignments': assignments}
 
 
 # ── main loop ───────────────────────────────────────────────────────
