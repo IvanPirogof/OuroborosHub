@@ -57,7 +57,7 @@
 
     /* ---------- styles ---------- */
     var css = [
-        ':root{--bg:#fff;--fg:#1c1c1e;--muted:#6b6f76;--line:#e3e5e8;--soft:#f4f5f7;--accent:#3b6cf6;--accent-bg:#e8effd;--busy:#dfe3ea;--danger:#c0392b;--card:#fff}',
+        ':root,:root[data-theme="light"]{--bg:#fff;--fg:#1c1c1e;--muted:#6b6f76;--line:#e3e5e8;--soft:#f4f5f7;--accent:#3b6cf6;--accent-bg:#e8effd;--busy:#dfe3ea;--danger:#c0392b;--card:#fff}',
         ':root[data-theme="dark"]{--bg:#121316;--fg:#ececef;--muted:#9a9ea6;--line:#2a2d33;--soft:#1b1d22;--accent:#7aa2ff;--accent-bg:#1f2a44;--busy:#2c3038;--danger:#ff7b6b;--card:#181a1f}',
         'html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font:14px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
         '#root{padding:12px;box-sizing:border-box}',

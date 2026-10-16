@@ -360,6 +360,24 @@ def row_to_ics(event: Dict[str, Any], prodid: str = "-//Ouroboros//calendar//RU"
 
 # ── Yandex CalDAV ───────────────────────────────────────────────────
 
+def _check_yandex_address(url: str) -> None:
+    """Credentials stay on the provider's HTTPS origin, not a netloc prefix."""
+    try:
+        address = urllib.parse.urlsplit(url)
+        allowed = (address.scheme == 'https' and address.hostname == 'caldav.yandex.ru'
+                   and address.port in (None, 443) and address.username is None and address.password is None)
+    except ValueError:
+        allowed = False
+    if not allowed:
+        raise ProviderError('network', 'адрес вне HTTPS caldav.yandex.ru; запрос не отправлен')
+
+
+class _YandexRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_yandex_address(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 class YandexAdapter:
     """Thin CalDAV client for caldav.yandex.ru (principal/home derived from the login, no discovery)."""
 
@@ -375,15 +393,14 @@ class YandexAdapter:
 
     # transport
     def _request(self, method: str, url: str, body: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> Tuple[int, Dict[str, str], str]:
-        if not url.startswith(YANDEX_BASE):
-            raise ProviderError("network", f"адрес вне caldav.yandex.ru: {url}")
+        _check_yandex_address(url)
         req = urllib.request.Request(url, data=body.encode("utf-8") if body is not None else None, method=method)
         req.add_header("Authorization", self._auth)
         req.add_header("User-Agent", USER_AGENT)
         for k, v in (headers or {}).items():
             req.add_header(k, v)
         try:
-            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+            with urllib.request.build_opener(_YandexRedirect()).open(req, timeout=HTTP_TIMEOUT) as resp:
                 return resp.status, {k.lower(): v for k, v in resp.headers.items()}, resp.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as exc:
             text = ""

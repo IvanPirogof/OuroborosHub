@@ -496,6 +496,7 @@ def _stage_update_event(store, event_id: str, changes: Dict[str, Any], scope: st
         write_kind = "create" if (not target.get("external_id") and not target.get("href") and not target.get("master_id")) else "update"
         birth = next((i for i in store.intents_for_event(target['id'])
                       if i['kind'] == 'create' and i['state'] in (INTENT_PENDING, INTENT_FAILED, INTENT_CONFLICT)), None)
+        recover_birth = _recover_failed_create(store, birth) if birth else False
         if birth:
             write_kind = 'update'
         kinds: List[str] = []
@@ -505,7 +506,7 @@ def _stage_update_event(store, event_id: str, changes: Dict[str, Any], scope: st
             kinds.append("rsvp")             # …then the answer, as its own provider call (it waits while the write is pending)
         else:
             kinds.append(write_kind)
-        result: Dict[str, Any] = {"status": INTENT_PENDING, "_intent_ids": []}
+        result: Dict[str, Any] = {"status": INTENT_PENDING, "_intent_ids": [birth['id']] if recover_birth else []}
         for kind in kinds:
             payload = {"scope": scope, "changes": {k: v for k, v in changes.items() if k != "my_response"}, "send_updates": bool(send_updates)}
             payload['family_root_id'] = roots[cal['id']]
@@ -534,7 +535,8 @@ def _stage_update_event(store, event_id: str, changes: Dict[str, Any], scope: st
                 if payload.get('relocated_from_master'):
                     parent = store.get_event(current['master_id'])
                     payload['baseline'] = _baseline_before({parent['id']: parent}, current)
-            intent = store.add_intent(kind, cal["account_id"], cal["id"], target["id"], payload, scope=scope, expected_etag=_write_etag(store, cal, current), op_id=op_id)
+            expected = birth['expected_etag'] if recover_birth else _write_etag(store, cal, current)
+            intent = store.add_intent(kind, cal["account_id"], cal["id"], target["id"], payload, scope=scope, expected_etag=expected, op_id=op_id)
             previous_by_calendar[cal['id']] = intent['id']
             result["_intent_ids"].append(intent["id"])
         assignments.append({"calendar_id": target["calendar_id"], "calendar_name": cal["name"], "event_id": target["id"], **result})
@@ -969,6 +971,25 @@ def _split_series(store, master: Dict[str, Any], occ_key: str, changes: Dict[str
 
 
 # ── intents ─────────────────────────────────────────────────────────
+
+def _recover_failed_create(store, birth) -> bool:
+    """A new owner edit may recover a retained, transient-unknown creation.
+
+    Reuse the original desired snapshot and version, not the edited display row
+    or an ETag imported by sync. Only the creation's verified ACK releases its
+    successor. Attempts survive so a retry cannot masquerade as first revival.
+    Called inside the owner's staging transaction; no provider I/O here.
+    """
+    if birth['state'] != INTENT_FAILED:
+        return False
+    payload = json.loads(birth.get('payload_json') or '{}')
+    previous = json.loads(birth.get('result_json') or '{}')
+    if not payload.get('desired') or previous.get('kind') not in ('network', 'server', 'retry'):
+        return False
+    store.settle_intent(birth['id'], INTENT_PENDING,
+                        {'note': 'owner edit requests original creation recovery', 'previous': previous})
+    return True
+
 
 def _predecessor(store, intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Ordinary event ordering uses durable insertion order, not wall-clock time."""

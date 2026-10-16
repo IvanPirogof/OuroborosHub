@@ -628,7 +628,7 @@ class GoogleRound3Tests(unittest.TestCase):
         self.assertEqual(exception["sync_state"], "pending")
         self.assertEqual(ctx.store.open_intents()[0]["state"], "pending")
 
-    def test_create_409_cancelled_resource_is_replaced_with_put(self):
+    def test_create_409_returns_versioned_tombstone_without_unconditional_put(self):
         adapter = self.adapter()
         calls = []
 
@@ -644,7 +644,7 @@ class GoogleRound3Tests(unittest.TestCase):
 
         adapter._request = request
         result = adapter.create(
-            {"external_id": "primary"},
+            {"id": "google:owner:primary", "external_id": "primary"},
             {
                 "id": "local",
                 "uid": "stable@example.test",
@@ -657,8 +657,10 @@ class GoogleRound3Tests(unittest.TestCase):
             },
             {},
         )
-        self.assertEqual([call[0] for call in calls], ["POST", "GET", "PUT"])
-        self.assertEqual(result["etag"], '"new"')
+        self.assertEqual([call[0] for call in calls], ["POST", "GET"])
+        self.assertTrue(result["existed"])
+        self.assertTrue(result["cancelled"])
+        self.assertEqual(result["etag"], '"old"')
 
 
 class YandexAndBoundedResultRound3Tests(unittest.TestCase):
