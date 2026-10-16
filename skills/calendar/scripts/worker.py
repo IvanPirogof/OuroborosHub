@@ -209,9 +209,12 @@ def _stage_feed(store, cal, rows, basis, awaiting, kind, next_cursor):
                     deleted += int(store.confirm_pending_delete(existing["id"], basis[existing['id']])) if existing['id'] in basis else 0
                 elif existing.get("sync_state") not in ("pending", "conflict", "failed"):
                     if existing['id'] in basis:
-                        result = _stage_absent_cascade(store, existing['id'], basis[existing['id']], basis)
-                        deleted += int(result.get('status') == 'ok')
-                        assignments.extend(result.get('assignments', []))
+                        if not existing.get('link_group_id'):
+                            deleted += int(store.retire_provider_absent(existing['id'], basis[existing['id']]))
+                        else:
+                            result = _stage_absent_cascade(store, existing['id'], basis[existing['id']], basis)
+                            deleted += int(result.get('status') == 'ok')
+                            assignments.extend(result.get('assignments', []))
             continue
         if existing is None:
             saved = store.insert_provider_master({k: v for k, v in row.items() if k != "master_external_id"})
@@ -246,6 +249,9 @@ def _stage_feed(store, cal, rows, basis, awaiting, kind, next_cursor):
             # as soon as the first send becomes pending during an outage.
             delta = {k: row.get(k) or '' for k in ('start_utc', 'end_utc', 'tz', 'all_day',
                      'rrule', 'rdates', 'exdates', 'title') if existing.get(k) != row.get(k)}
+            if 'start_utc' in delta:
+                # Provider dates are absolute, even when unchanged beside a new anchor.
+                delta.update({key: row.get(key) or '' for key in ('exdates', 'rdates')})
             for sib in store.group_masters(existing['link_group_id']):
                 if sib['id'] == existing['id']:
                     continue

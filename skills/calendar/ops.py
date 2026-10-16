@@ -530,6 +530,10 @@ def _stage_update_event(store, event_id: str, changes: Dict[str, Any], scope: st
                 payload.update({"response": changes.get("my_response"), "notify_organizer": bool(send_updates)})
             current = store.get_event(target["id"]) or target
             old_target = before.get(target['id'])
+            if 'exdates' in changes:
+                # Remove only exclusions this command actually observed and replaces.
+                # Independent occurrence cancellations can exist only in the live ICS.
+                payload['previous_exdates'] = (old_target or {}).get('exdates') or ''
             if old_target and old_target.get('master_id') and old_target['master_id'] != current.get('master_id'):
                 payload['relocated_from_master'] = old_target['master_id']
             if kind != 'create' and not _write_etag(store, cal, current):

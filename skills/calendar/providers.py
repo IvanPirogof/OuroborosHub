@@ -223,7 +223,7 @@ def _listify(value: Any) -> List[Any]:
 
 
 def row_to_ics(event: Dict[str, Any], prodid: str = "-//Ouroboros//calendar//RU", mute_alarms: bool = False,
-               replace_exdates: bool = False) -> str:
+               removed_exdates: Optional[List[str]] = None) -> str:
     """Build VCALENDAR from a row; when the row carries the provider's original text, edit it in place.
 
     ``mute_alarms`` = the owner switched «напоминает Уроборос» on for this calendar: no VALARM goes to the provider.
@@ -269,7 +269,7 @@ def row_to_ics(event: Dict[str, Any], prodid: str = "-//Ouroboros//calendar//RU"
     except (TypeError, ValueError):
         seq = 1
     live_exdates: List[str] = []
-    if not replace_exdates and vevent.get("EXDATE") is not None and event.get("rrule"):
+    if vevent.get("EXDATE") is not None and event.get("rrule"):
         try:
             live_start = _as_utc(vevent.decoded("DTSTART"), tz)[0]
             live_rule = vevent.get("RRULE").to_ical().decode("utf-8") if vevent.get("RRULE") is not None else ""
@@ -277,6 +277,7 @@ def row_to_ics(event: Dict[str, Any], prodid: str = "-//Ouroboros//calendar//RU"
             live_start, live_rule = "", ""
         if live_start == str(event.get("start_utc") or "") and live_rule == str(event.get("rrule") or ""):
             live_exdates = _dt_list(vevent.get("EXDATE"), tz)   # same series: cancellations that live only on the server stay
+    live_exdates = [value for value in live_exdates if value not in (removed_exdates or [])]
     for key in ("DTSTART", "DTEND", "DURATION", "SUMMARY", "DESCRIPTION", "LOCATION", "RRULE", "STATUS", "LAST-MODIFIED", "DTSTAMP", "SEQUENCE",
                 "EXDATE", "RDATE", "ATTENDEE", "ORGANIZER", "TRANSP"):
         if key in vevent:
@@ -583,8 +584,12 @@ class YandexAdapter:
         headers = {"Content-Type": "text/calendar; charset=utf-8"}
         if expected_etag:
             headers["If-Match"] = expected_etag
-        sent = row_to_ics(event, mute_alarms=bool(payload.get("mute_provider_reminders")),
-                          replace_exdates='exdates' in (payload.get('changes') or {}))
+        removed = []
+        if 'exdates' in (payload.get('changes') or {}):
+            previous = set(filter(None, str(payload.get('previous_exdates') or '').split(',')))
+            desired = set(filter(None, str(event.get('exdates') or '').split(',')))
+            removed = sorted(previous - desired)
+        sent = row_to_ics(event, mute_alarms=bool(payload.get("mute_provider_reminders")), removed_exdates=removed)
         _, resp_headers, _ = self._request("PUT", href, sent, headers)
         return {"etag": self._write_version(href, sent, resp_headers)}
 
