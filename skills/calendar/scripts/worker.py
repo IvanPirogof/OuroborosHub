@@ -140,6 +140,7 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
     incremental = bool(cursor) and kind == "google_sync_token"
     upserts = deleted = propagated = 0
     masters: Dict[str, str] = {}
+    copy_commands = {}  # all parts of this feed for one destination stage together
     awaiting = _awaiting_identity(store, adapter, cal)
     refreshed: Dict[str, str] = {}   # CalDAV master id → UID, for series whose whole resource was re-read this pass
     for row in rows:
@@ -187,34 +188,18 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
         upserts += 1
         if kind != "google_sync_token" and row.get("rrule"):
             refreshed[existing["id"]] = row["uid"]
-        if existing.get("link_group_id") and (existing.get("start_utc") != row["start_utc"] or existing.get("end_utc") != row["end_utc"]):
-            moved = {"start_utc": row["start_utc"], "end_utc": row["end_utc"], "all_day": row["all_day"]}
-            for sib in store.group_masters(existing["link_group_id"]):
-                if sib["id"] == existing["id"]:
+        if existing.get("link_group_id"):
+            # One observation is one complete master change. Splitting time,
+            # title and exclusions into separate sends loses the later parts
+            # as soon as the first send becomes pending during an outage.
+            delta = {k: row.get(k) or '' for k in ('start_utc', 'end_utc', 'tz', 'all_day',
+                     'rrule', 'rdates', 'exdates', 'title') if existing.get(k) != row.get(k)}
+            for sib in store.group_masters(existing['link_group_id']):
+                if sib['id'] == existing['id']:
                     continue
-                propagated += _sync_copy(store, providers, basis, sib['id'], 'update', sib['id'], moved, 'all')
-        if existing.get("link_group_id") and (existing.get("rrule") != row.get("rrule") or existing.get("title") != row.get("title")):
-            # A source calendar changing recurrence or title must update the
-            # linked copies even when DTSTART is unchanged. Busy copies retain
-            # their deliberately private title.
-            for sib in store.group_masters(existing["link_group_id"]):
-                if sib["id"] == existing["id"] or sib.get("sync_state") == "pending_delete":
-                    continue
-                delta = {}
-                if existing.get("rrule") != row.get("rrule"):
-                    delta["rrule"] = row.get("rrule") or ""
-                if existing.get("title") != row.get("title") and sib.get("publish_mode") != "busy":
-                    delta["title"] = row.get("title") or ""
-                if delta:
-                    propagated += _sync_copy(store, providers, basis, sib['id'], 'update', sib['id'], delta, 'all')
-        if existing.get("link_group_id") and row.get("rrule"):
-            # a date cancelled on the server as EXDATE (CalDAV style) is a cancelled occurrence for the copies too
-            new_ex = set(x for x in str(row.get("exdates") or "").split(",") if x) - set(x for x in str(existing.get("exdates") or "").split(",") if x)
-            for key in sorted(new_ex):
-                for sib in store.group_masters(existing["link_group_id"]):
-                    if sib["id"] == existing["id"]:
-                        continue
-                    propagated += _sync_copy(store, providers, basis, sib['id'], 'delete', f"{sib['id']}@{key}", {}, 'this')
+                changes = {k: v for k, v in delta.items() if k != 'title' or sib.get('publish_mode') != 'busy'}
+                if changes:
+                    copy_commands.setdefault(sib['id'], []).append(('update', sib['id'], changes, 'all'))
     for row in rows:
         if not row.get("recurrence_id"):
             continue
@@ -255,10 +240,10 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
                     if sib["id"] == master_id:
                         continue
                     if str(row.get("status") or "") == "cancelled":
-                        propagated += _sync_copy(store, providers, basis, sib['id'], 'delete', f"{sib['id']}@{key}", {}, 'this')
+                        copy_commands.setdefault(sib['id'], []).append(('delete', f"{sib['id']}@{key}", {}, 'this'))
                     else:
                         moved = {"start_utc": row["start_utc"], "end_utc": row["end_utc"], "all_day": row.get("all_day")}
-                        propagated += _sync_copy(store, providers, basis, sib['id'], 'update', f"{sib['id']}@{key}", moved, 'this')
+                        copy_commands.setdefault(sib['id'], []).append(('update', f"{sib['id']}@{key}", moved, 'this'))
     for master_id, uid in refreshed.items():
         # A CalDAV series is one resource read whole: an override VEVENT the server no longer holds (its date
         # cancelled by EXDATE, or the move undone) is not a local exception any more. Our own unsent writes stay.
@@ -301,6 +286,9 @@ def reconcile_calendar(store: Store, providers: Providers, adapter, cal: Dict[st
             if still_there:
                 continue
             deleted += _confirmed_deletion(store, providers, local, basis.get(local['id']), basis) if local['id'] in basis else 0
+    for root, commands in copy_commands.items():
+        result = ops._finish_command(store, providers, _stage_sync_copy, 'companion', basis, root, commands)
+        propagated += int(result.get('status') == 'ok')
     return upserts, deleted, propagated, next_cursor, kind
 
 
@@ -355,21 +343,29 @@ def _copy_unchanged(view, event_id, basis):
     return True
 
 
-def _stage_sync_copy(view, basis, root, kind, address, changes, scope):
+def _stage_sync_copy(view, basis, root, commands):
+    """Check the pre-fetch destination once and stage the entire observation.
+
+    No provider I/O happens until all its parts and their dependencies commit.
+    Pending protection from our first part must not reject our own later parts.
+    """
     if not _copy_unchanged(view, root, basis):
         return {'status': 'protected', 'assignments': []}
-    result = (ops._stage_update_event(view, address, changes, scope=scope, propagate=False)
-              if kind == 'update' else ops._stage_delete_event(view, address, scope=scope, cascade=False))
-    for row in [view.get_event(root)] + view.exceptions_for(root):
-        if row:
-            basis[row['id']] = row
-    return result
-
-
-def _sync_copy(store, providers, basis, root, kind, address, changes, scope):
-    result = ops._finish_command(store, providers, _stage_sync_copy, 'companion',
-                                 basis, root, kind, address, changes, scope)
-    return int(result.get('status') == 'ok')
+    assignments, previous = [], None
+    for kind, address, changes, scope in commands:
+        result = (ops._stage_update_event(view, address, changes, scope=scope, propagate=False)
+                  if kind == 'update' else ops._stage_delete_event(view, address, scope=scope, cascade=False))
+        for assignment in result.get('assignments', []):
+            for iid in assignment.get('_intent_ids', []):
+                intent = view.get_intent(iid)
+                payload = json.loads(intent['payload_json'])
+                if previous and not payload.get('after_intent_id'):
+                    payload['after_intent_id'] = previous
+                    with view._conn() as c:
+                        c.execute('UPDATE intents SET payload_json=? WHERE id=?', (json.dumps(payload), iid))
+                previous = iid
+            assignments.append(assignment)
+    return {'status': 'ok', 'assignments': assignments}
 
 
 def _confirmed_deletion(store: Store, providers: Providers, local: Dict[str, Any], observed=None, basis=None) -> int:

@@ -69,7 +69,7 @@ def agenda_payload(ctx: tools.Context, view: str, anchor: str, calendar_ids: Any
             usual.append({**pub, "usual": True})
             continue
         events.append(pub)
-    pending = ctx.store.intent_counts()
+    pending = ctx.store.intent_counts(active_only=True)
     return {
         "status": "ok", "view": view, "anchor": day.isoformat(), "timezone": tz_name(ctx.tz), "now": now.replace(microsecond=0).isoformat(),
         "range": {"start": iso_local(start, ctx.tz), "end": iso_local(end, ctx.tz)},

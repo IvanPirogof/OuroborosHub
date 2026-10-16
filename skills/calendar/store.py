@@ -379,7 +379,7 @@ class Store:
         data["updated_at"] = _ts()
         sets = ", ".join(
             "sync_state=CASE WHEN sync_state='pending_delete' OR"
-            " (SELECT kind FROM intents WHERE event_id=:id AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1)='delete'"
+            " (SELECT kind FROM intents WHERE event_id=:id AND state!='resolved' ORDER BY rowid DESC LIMIT 1)='delete'"
             " THEN 'pending_delete' ELSE :sync_state END"
             if k == "sync_state" and data[k] == "synced" else f"{k}=:{k}"
             for k in data
@@ -407,7 +407,7 @@ class Store:
         master = c.execute("SELECT sync_state, deleted_at FROM events WHERE id=?", (master_id,)).fetchone()
         if master is None or master["deleted_at"] or master["sync_state"] == "pending_delete":
             return True
-        latest = c.execute("SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1",
+        latest = c.execute("SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY rowid DESC LIMIT 1",
                            (master_id,)).fetchone()
         return latest is not None and latest["kind"] == "delete"
 
@@ -524,7 +524,7 @@ class Store:
             c.execute("BEGIN IMMEDIATE")
             c.execute("UPDATE events SET external_id=?, href=?, etag=?, updated_at=?,"
                       " sync_state=CASE WHEN sync_state='pending_delete' OR"
-                      " (SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1)='delete'"
+                      " (SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY rowid DESC LIMIT 1)='delete'"
                       " THEN 'pending_delete' ELSE 'synced' END WHERE id=?",
                       (result.get("external_id") or "", result.get("href") or "", result.get("etag") or "",
                        _ts(), event_id, event_id))
@@ -548,7 +548,7 @@ class Store:
                             (identity.get("external_id") or "", identity.get("href") or "", identity.get("etag") or "", _ts(), event_id))
             if cur.rowcount != 1:
                 return False
-            latest = c.execute("SELECT id, kind, state FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1",
+            latest = c.execute("SELECT id, kind, state FROM intents WHERE event_id=? AND state!='resolved' ORDER BY rowid DESC LIMIT 1",
                                (event_id,)).fetchone()
             if latest is not None and latest["kind"] == "delete" and latest["state"] == "conflict":
                 c.execute("UPDATE intents SET state=?, result_json=?, lease_until=NULL, lease_owner='', next_attempt_at=?, updated_at=?,"
@@ -579,7 +579,7 @@ class Store:
                 return False
             removed = c.execute("DELETE FROM events WHERE id=? AND"
                                 " (sync_state='pending_delete' OR (sync_state='conflict' AND"
-                                " (SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1)='delete'))"
+                                " (SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY rowid DESC LIMIT 1)='delete'))"
                                 " AND NOT EXISTS (SELECT 1 FROM intents WHERE event_id=? AND kind='create' AND state!=?)",
                                 (event_id, event_id, event_id, INTENT_DONE))
             if not removed.rowcount:
@@ -761,7 +761,7 @@ class Store:
         with self._conn() as c:
             rows = c.execute(
                 "SELECT id FROM intents WHERE state=? AND (lease_until IS NULL OR lease_until < ?)"
-                " AND (next_attempt_at IS NULL OR next_attempt_at <= ?) ORDER BY created_at LIMIT ?",
+                " AND (next_attempt_at IS NULL OR next_attempt_at <= ?) ORDER BY rowid LIMIT ?",
                 (INTENT_PENDING, now, now, limit)).fetchall()
         out = []
         for r in rows:
@@ -792,19 +792,22 @@ class Store:
     def delete_requested(self, event_id: str) -> bool:
         """Only the latest command's delete survives adapter failure; a later owner edit supersedes it."""
         with self._conn() as c:
-            row = c.execute("SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY created_at DESC, id DESC LIMIT 1",
+            row = c.execute("SELECT kind FROM intents WHERE event_id=? AND state!='resolved' ORDER BY rowid DESC LIMIT 1",
                             (event_id,)).fetchone()
         return row is not None and row["kind"] == "delete"
 
     def open_intents(self, limit: int = 50) -> List[Dict[str, Any]]:
         with self._conn() as c:
-            rows = c.execute("SELECT * FROM intents WHERE state IN (?, ?) ORDER BY created_at LIMIT ?",
+            rows = c.execute("SELECT * FROM intents WHERE state IN (?, ?) ORDER BY rowid LIMIT ?",
                              (INTENT_PENDING, "conflict", limit)).fetchall()
         return [dict(r) for r in rows]
 
-    def intent_counts(self) -> Dict[str, int]:
+    def intent_counts(self, active_only: bool = False) -> Dict[str, int]:
+        # The frequently polled widget needs only unsettled counts. Keep the
+        # complete history available to explicit status/diagnostic readers.
+        where = " WHERE state IN ('pending','conflict','failed')" if active_only else ""
         with self._conn() as c:
-            rows = c.execute("SELECT state, COUNT(*) AS n FROM intents GROUP BY state").fetchall()
+            rows = c.execute("SELECT state, COUNT(*) AS n FROM intents" + where + " GROUP BY state").fetchall()
         return {r["state"]: int(r["n"]) for r in rows}
 
     # ── reminders ───────────────────────────────────────────────────

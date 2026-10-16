@@ -14,11 +14,14 @@ import hashlib
 import json
 import os
 import secrets as pysecrets
+import sqlite3
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime, timedelta, timezone
+from contextlib import closing
 from typing import Any, Dict, List, Optional, Tuple
 
 from model import AVAIL_BUSY, PROVIDER_GOOGLE, account_id as make_account_id, calendar_id as make_calendar_id, get_tz, iso_utc, now_utc, own_reminders, parse_stored
@@ -75,13 +78,43 @@ def load_tokens(state_dir: str, passphrase: str) -> Dict[str, Dict[str, Any]]:
 
 
 def save_tokens(state_dir: str, passphrase: str, tokens: Dict[str, Dict[str, Any]]) -> None:
+    """Explicit whole-vault replacement; ordinary writers merge under the same lock."""
+    def replace(fresh):
+        fresh.clear()
+        fresh.update(tokens)
+        return True
+    _mutate_tokens(state_dir, passphrase, replace)
+
+
+def _mutate_tokens(state_dir, passphrase, mutate):
+    """Serialize vault read/merge/replace with the existing calendar DB writer.
+
+    No HTTP or schema initialization belongs under this lock. Atomic file replace
+    is the vault commit; this empty DB transaction only serializes its writers.
+    Readers use the complete old or new ciphertext, never an intermediate file.
+    """
+    from store import DB_FILENAME
+    with closing(sqlite3.connect(os.path.join(state_dir, DB_FILENAME), timeout=5, isolation_level=None)) as conn:
+        with conn:
+            conn.execute('BEGIN IMMEDIATE')
+            fresh = load_tokens(state_dir, passphrase)
+            if not mutate(fresh):
+                return False
+            _write_tokens(state_dir, passphrase, fresh)
+            return True
+
+
+def _write_tokens(state_dir, passphrase, tokens):
     f = _fernet(state_dir, passphrase)
     path = os.path.join(state_dir, TOKENS_FILE)
-    tmp = path + ".tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "wb") as fh:
-        fh.write(f.encrypt(json.dumps(tokens).encode("utf-8")))
-    os.replace(tmp, path)
+    fd, tmp = tempfile.mkstemp(prefix=TOKENS_FILE + '.', suffix='.tmp', dir=state_dir)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(f.encrypt(json.dumps(tokens).encode("utf-8")))
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 
 # ── OAuth (PKCE, loopback callback on the host) ─────────────────────
@@ -118,31 +151,33 @@ def finish_auth(store, secrets: Dict[str, Any], state_dir: str, code: str, state
     if client_secret:
         body["client_secret"] = client_secret
     data = _token_request(body)
-    tokens = load_tokens(state_dir, str(secrets.get("CALENDAR_TOKEN_KEY") or ""))
     adapter = GoogleAdapter("pending", data["access_token"], data.get("refresh_token", ""), now_utc() + timedelta(seconds=int(data.get("expires_in") or 3600)),
                             client_id, client_secret, None)
     email = adapter.primary_email()
     if not email:
         raise ProviderError("auth", "Google не вернул основной календарь — не удалось определить аккаунт")
-    prev = tokens.get(email) or {}
-    tokens[email] = {"access_token": data["access_token"], "refresh_token": data.get("refresh_token") or prev.get("refresh_token", ""),
-                     "expires_at": iso_utc(now_utc() + timedelta(seconds=int(data.get("expires_in") or 3600))), "scope": data.get("scope", "")}
-    save_tokens(state_dir, str(secrets.get("CALENDAR_TOKEN_KEY") or ""), tokens)
+    def connect(tokens):
+        prev = tokens.get(email) or {}
+        tokens[email] = {"access_token": data["access_token"], "refresh_token": data.get("refresh_token") or prev.get("refresh_token", ""),
+                         "expires_at": iso_utc(now_utc() + timedelta(seconds=int(data.get("expires_in") or 3600))),
+                         "scope": data.get("scope", ""), "generation": uuid.uuid4().hex}
+        return True
+    _mutate_tokens(state_dir, str(secrets.get("CALENDAR_TOKEN_KEY") or ""), connect)
     store.delete_setting(PENDING_PREFIX + state)
     return {"email": email, "account_id": make_account_id(PROVIDER_GOOGLE, email)}
 
 
 def forget_account(state_dir: str, passphrase: str, email: str) -> bool:
     """Drop the stored tokens of one account (disconnect): reload_google must not resurrect it."""
+    def forget(tokens):
+        if email not in tokens:
+            return False
+        del tokens[email]
+        return True
     try:
-        tokens = load_tokens(state_dir, passphrase)
+        return _mutate_tokens(state_dir, passphrase, forget)
     except ProviderError:
         return False
-    if email not in tokens:
-        return False
-    del tokens[email]
-    save_tokens(state_dir, passphrase, tokens)
-    return True
 
 
 def _token_request(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -198,9 +233,13 @@ class GoogleAdapter:
         expires = parse_stored(entry.get("expires_at")) or now_utc()
 
         def persist(update: Dict[str, Any]) -> None:
-            fresh = load_tokens(state_dir, passphrase)
-            fresh[email] = {**fresh.get(email, {}), **update}
-            save_tokens(state_dir, passphrase, fresh)
+            def refresh(fresh):
+                current = fresh.get(email)
+                if not current or (current.get('generation'), current.get('refresh_token')) != (entry.get('generation'), entry.get('refresh_token')):
+                    return False  # a disconnect or a new OAuth connection wins
+                fresh[email] = {**current, **update}
+                return True
+            _mutate_tokens(state_dir, passphrase, refresh)
 
         return cls(email, entry.get("access_token", ""), entry["refresh_token"], expires, client_id, str(secrets.get("GOOGLE_CALENDAR_CLIENT_SECRET") or ""), persist)
 

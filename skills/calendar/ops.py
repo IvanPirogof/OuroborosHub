@@ -1386,8 +1386,17 @@ def _stage_reassign_event(store, row: Dict[str, Any], calendar_ids: List[str]) -
         intent = store.add_intent("create", cal["account_id"], cid, saved["id"], {"send_updates": False}, op_id=op_id)
         outcome = {"status": INTENT_PENDING, "_intent_ids": [intent["id"]]}
         for exc_row in exception_rows:
-            # the exceptions resolve through the master and are written by the companion queue (one resource PUT each — not inside the tool call)
-            store.add_intent("update", cal["account_id"], cid, exc_row["id"], {"scope": SCOPE_THIS, "changes": {}, "send_updates": False}, scope=SCOPE_THIS, op_id=op_id)
+            # A copied override is an edit of the newly created master's ordinary
+            # instance, not an empty PATCH. Preserve its pre-edit comparison and
+            # explicit birth dependency through offline replay and resolution.
+            baseline = _baseline_before({saved['id']: saved}, exc_row)
+            changes = {key: exc_row[key] for key in ('title', 'description', 'location', 'availability',
+                       'start_utc', 'end_utc', 'tz', 'all_day', 'status')
+                       if exc_row.get(key) != baseline.get(key)}
+            store.add_intent("update", cal["account_id"], cid, exc_row["id"],
+                             {"scope": SCOPE_THIS, "changes": changes, "baseline": baseline,
+                              "after_intent_id": intent['id'], "send_updates": False},
+                             scope=SCOPE_THIS, op_id=op_id)
         added.append({"calendar_id": cid, "calendar_name": cal["name"], "event_id": saved["id"], **outcome})
     for cid, m in current.items():
         if cid in wanted or m["id"] == row["id"]:
