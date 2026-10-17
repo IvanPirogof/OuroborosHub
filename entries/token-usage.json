@@ -3,7 +3,7 @@
     "ouroboros"
   ],
   "description": "Token Observatory — Liquid Glass dashboard for recorded Ouroboros token usage, tasks and models.",
-  "digest": "sha256v2:0b4678e6d3bb1aa443fefb439888e19c9ff62254e75b2e7ee6bfb17335a29410",
+  "digest": "7cf6c803bf542159499745a965608add859a3a10cfdc68e3e1d093561f161507",
   "name": "token-usage",
   "owner": "razzant",
   "schema_version": 2,

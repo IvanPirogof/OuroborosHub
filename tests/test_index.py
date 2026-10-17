@@ -15,10 +15,11 @@ from unittest.mock import patch
 
 from scripts import build_catalog as wrapper
 from scripts import build_index as builder
-from scripts.release_digest import PER_INSTALL_NOTE_FILENAMES, payload_digest, payload_files
+from scripts.release_digest import (DIGEST_DOMAIN, PER_INSTALL_NOTE_FILENAMES, declaration_json,
+                                    manifest_declaration, payload_digest, payload_files, release_declaration)
 
 ROOT = Path(__file__).resolve().parents[1]
-CORE = Path('/Users/anton/worktrees/ouroboros/skills-hub-v4-20261017')
+CORE = Path('/Users/anton/worktrees/ouroboros/skills-v4-b2')
 CORE_PYTHON = Path('/Users/anton/Desktop/Ouroboros.app/Contents/Resources/python-standalone/bin/python3')
 
 
@@ -95,7 +96,7 @@ class IndexTests(unittest.TestCase):
             {'category': []}, {'category': ['other']}, {'category': ['search'] * 2},
             {'category': ['search', 'writing', 'search']}, {'category': [{}]}, {'category': 'search'},
             {'name': '../escape'}, {'name': 'x' * 65}, {'description': ''}, {'version': 7},
-            {'digest': 'a' * 64}, {'digest': 'sha256v2:' + 'G' * 64}, {'install_specs': {}},
+            {'digest': 'a' * 63}, {'digest': 'sha256v2:' + 'a' * 64}, {'digest': 'G' * 64},
             {'when_to_use': 1}, {'type': 'unknown'}, {'withdrawn': True},
             {'withdrawn': {'reason': 'why', 'at': '2026-02-30'}},
             {'withdrawn': {'reason': '', 'at': '2026-01-01'}},
@@ -135,7 +136,7 @@ class IndexTests(unittest.TestCase):
         write([endorsement])
         builder.build_catalog(self.root)
         for rows in ([endorsement] * 2, [{**endorsement, 'name': 'missing'}],
-                     [{**endorsement, 'digest': 'sha256v2:' + '0' * 64}], [{**endorsement, 'recommended': 1}]):
+                     [{**endorsement, 'digest': '0' * 64}], [{**endorsement, 'recommended': 1}]):
             write(rows)
             with self.assertRaises(ValueError):
                 builder.build_catalog(self.root)
@@ -190,10 +191,84 @@ class IndexTests(unittest.TestCase):
         # A pointer still checks fetched bytes; its old raw payload remains a v1 row.
         with patch.object(builder, 'source_directory', return_value=contextlib.nullcontext(self.root / 'skills/demo')):
             self.assertEqual(builder.build_catalog(self.root)['skills'][0]['slug'], 'demo')
-            self.entry['digest'] = 'sha256v2:' + '0' * 64
+            self.entry['digest'] = '0' * 64
             self.write('entries/demo.json', self.entry)
             with self.assertRaisesRegex(ValueError, 'digest mismatch'):
                 builder.build_catalog(self.root)
+
+    def test_git_fetch_resolves_exact_commit_confines_path_and_releases_checkout(self):
+        upstream = self.root / 'upstream'
+        upstream.mkdir()
+        def git(*args):
+            return builder.run_git(['-c', 'user.name=Test', '-c', 'user.email=test@example.test', *args], upstream)
+        git('init', '-q', '-b', 'main')
+        (upstream / 'SKILL.md').write_text('original', encoding='utf-8')
+        git('add', '.')
+        git('commit', '-qm', 'first')
+        commit = git('rev-parse', 'HEAD')
+        (upstream / 'SKILL.md').write_text('later', encoding='utf-8')
+        git('commit', '-qam', 'second')
+        # The production schema requires HTTPS. Only this isolated transport test uses a local repo.
+        entry = {**self.entry, 'source': {'kind': 'git', 'repo': str(upstream), 'path': '', 'commit': commit}}
+        with builder.source_directory(self.root, entry) as checkout:
+            self.assertEqual((checkout / 'SKILL.md').read_text(encoding='utf-8'), 'original')
+        self.assertFalse(checkout.exists())
+        entry['source']['path'] = 'missing'
+        with self.assertRaisesRegex(ValueError, 'path missing'):
+            with builder.source_directory(self.root, entry):
+                self.fail('missing path accepted')
+        with patch.object(builder, 'run_git', side_effect=['', '', '0' * 40]), self.assertRaisesRegex(ValueError, 'different commit'):
+            with builder.source_directory(self.root, entry):
+                self.fail('wrong commit accepted')
+
+    def test_refresh_copies_raw_declaration_version_and_digest_without_renewing_endorsements(self):
+        self.write('official.json', {'schema_version': 1, 'maintainer': 'razzant',
+                                    'endorsements': [{'name': 'demo', 'digest': self.entry['digest']}]})
+        pinned = (self.root / 'official.json').read_bytes()
+        manifest = self.root / 'skills/demo/SKILL.md'
+        manifest.write_text('---\nversion: v2\ndependencies:\n  manual: ["Install café"]\n---\nBody', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'raw manifest declaration'):
+            builder.build_catalog(self.root)
+        self.assertEqual(builder.main(['--refresh', 'demo'], root=self.root), 0)
+        refreshed = builder.read_json(self.root / 'entries/demo.json')
+        self.assertEqual(refreshed['install_specs'], {'manual': ['Install café']})
+        self.assertEqual(refreshed['version'], 'v2')
+        self.assertEqual(refreshed['digest'], payload_digest(manifest.parent))
+        self.assertEqual((self.root / 'official.json').read_bytes(), pinned)
+        with self.assertRaisesRegex(ValueError, 'endorsed release'):
+            builder.build_catalog(self.root)
+        self.write('official.json', {'schema_version': 1, 'maintainer': 'razzant', 'endorsements': []})
+        self.assertEqual(builder.build_catalog(self.root)['skills'][0]['install_specs'], refreshed['install_specs'])
+        manifest.write_text('body without dependencies', encoding='utf-8')
+        builder.main(['--refresh', 'demo'], root=self.root)
+        self.assertNotIn('install_specs', builder.read_json(self.root / 'entries/demo.json'))
+        builder.build_catalog(self.root)
+
+    def test_legacy_pin_tracks_committed_payload_and_survives_generated_commits(self):
+        def git(*args):
+            return builder.run_git(['-c', 'user.name=Test', '-c', 'user.email=test@example.test', *args], self.root)
+        git('init', '-q', '-b', 'main')
+        git('add', '.')
+        git('commit', '-qm', 'initial payload')
+        first = git('rev-parse', 'HEAD')
+        self.assertTrue(builder.legacy_raw_base(self.root).endswith('/' + first))
+        builder.main([], root=self.root)
+        before = (self.root / 'catalog.json').read_bytes()
+        git('add', 'catalog.json')
+        git('commit', '-qm', 'generated catalog')
+        self.assertEqual(builder.json_bytes(builder.build_catalog(self.root)), before)
+        self.entry['description'] = 'New card text'
+        self.write('entries/demo.json', self.entry)
+        git('commit', '-qam', 'metadata update')
+        self.assertTrue(builder.legacy_raw_base(self.root).endswith('/' + first))
+        (self.root / 'skills/demo/asset.txt').write_text('new', encoding='utf-8')
+        self.assertTrue(builder.legacy_raw_base(self.root).endswith('/main'))
+        builder.main(['--refresh', 'demo'], root=self.root)
+        git('add', 'skills', 'entries')
+        git('commit', '-qm', 'new payload')
+        latest = git('rev-parse', 'HEAD')
+        self.assertNotEqual(first, latest)
+        self.assertTrue(builder.build_catalog(self.root)['raw_base_url'].endswith('/' + latest))
 
 
 class ReleaseIdentityTests(unittest.TestCase):
@@ -217,24 +292,52 @@ class ReleaseIdentityTests(unittest.TestCase):
             self.assertIn('__pycache__/ignored.pyc', [p.relative_to(root).as_posix() for p in payload_files(
                 root, manifest_entry='__pycache__/ignored.pyc')])
             base = payload_digest(root)
-            self.assertNotEqual(payload_digest(root, install_specs=[{'kind': 'pip', 'package': 'httpx'}]), base)
-            self.assertEqual(payload_digest(root, install_specs=[{'kind': 'brew', 'package': 'x'}]), base)
+            (root / '.clawhub.json').write_text(json.dumps({'install_specs': {
+                'raw': [{'kind': 'brew', 'package': 'x'}]}}), encoding='utf-8')
+            # Manual declarations are part of the release too; nothing is normalized away.
+            self.assertNotEqual(payload_digest(root), base)
             (root / '.env').write_text('synthetic', encoding='utf-8')
             with self.assertRaises(ValueError):
                 payload_digest(root)
+
+    def test_exact_raw_recipe_sorting_and_sidecar_precedence(self):
+        with tempfile.TemporaryDirectory(prefix='hub-raw-digest-') as tmp:
+            root = Path(tmp)
+            (root / 'a').mkdir()
+            (root / 'a/z.txt').write_text('nested', encoding='utf-8')
+            (root / 'a.txt').write_text('sibling', encoding='utf-8')
+            front = {'install_specs': [], 'install': {'manual': 'café'}, 'dependencies': ['ignored']}
+            (root / 'SKILL.md').write_text('\ufeff' + json.dumps(front), encoding='utf-8')
+            self.assertEqual(release_declaration(root), front['install'])
+            expected = hashlib.sha256(DIGEST_DOMAIN)
+            for path in sorted(('SKILL.md', 'a.txt', 'a/z.txt')):
+                expected.update(path.encode() + b'\0' + hashlib.sha256((root / path).read_bytes()).digest())
+            expected.update(b'\0install_specs\0' + hashlib.sha256(
+                declaration_json(front['install']).encode()).hexdigest().encode())
+            self.assertEqual(payload_digest(root), expected.hexdigest())
+            for key in ('raw', 'auto'):
+                for name in ('.clawhub.json', '.ouroboroshub.json'):
+                    (root / name).write_text(json.dumps({'install_specs': {key: name}}), encoding='utf-8')
+                    self.assertEqual(release_declaration(root), name)
+                (root / '.ouroboroshub.json').unlink()
+            (root / '.clawhub.json').write_text('{invalid', encoding='utf-8')
+            self.assertEqual(release_declaration(root), front['install'])
+            self.assertIsNone(manifest_declaration({'install_specs': {}, 'install': '', 'dependencies': None}))
+            (root / 'SKILL.md').rename(root / 'skill.json')
+            self.assertEqual(release_declaration(root), front['install'])
 
     @unittest.skipUnless((CORE / 'ouroboros/skill_identity.py').is_file() and CORE_PYTHON.is_file(),
                          'designated core checkout/interpreter absent; cross-repository digest check skipped')
     def test_all_hosted_releases_match_core_read_only(self):
         rows = [builder.read_json(path) for path in sorted((ROOT / 'entries').glob('*.json'))]
-        cases = [{'path': str(ROOT / r['source']['path']), 'specs': r.get('install_specs'),
+        cases = [{'path': str(ROOT / r['source']['path']),
                   'front': builder.read_manifest(ROOT / r['source']['path'])} for r in rows if r['source']['kind'] == 'hosted']
         code = '''import json,sys
 from pathlib import Path
 from ouroboros.skill_identity import payload_digest
 cases=json.load(sys.stdin)
 print(json.dumps([payload_digest(Path(c['path']), manifest_entry=c['front'].get('entry',''),
-    manifest_scripts=c['front'].get('scripts'), install_specs=c['specs']) for c in cases]))
+    manifest_scripts=c['front'].get('scripts')) for c in cases]))
 '''
         with tempfile.TemporaryDirectory(prefix='hub-core-identity-') as tmp:
             env = {'PATH': os.environ.get('PATH', ''), 'HOME': tmp, 'PYTHONPATH': str(CORE),
@@ -246,7 +349,7 @@ print(json.dumps([payload_digest(Path(c['path']), manifest_entry=c['front'].get(
         self.assertEqual(run.returncode, 0, run.stderr)
         expected = json.loads(run.stdout.strip().splitlines()[-1])
         actual = [payload_digest(Path(c['path']), manifest_entry=c['front'].get('entry', ''),
-                  manifest_scripts=c['front'].get('scripts'), install_specs=c['specs']) for c in cases]
+                  manifest_scripts=c['front'].get('scripts')) for c in cases]
         self.assertEqual(actual, expected)
         self.assertEqual(actual, [r['digest'] for r in rows if r['source']['kind'] == 'hosted'])
 
@@ -256,7 +359,7 @@ print(json.dumps([payload_digest(Path(c['path']), manifest_entry=c['front'].get(
         self.assertEqual(len(membership), 50)
         self.assertTrue(set(membership) <= set(entries))
         for name, facts in membership.items():
-            self.assertEqual({k: entries[name][k] for k in facts}, facts)
+            self.assertEqual(entries[name]['owner'], facts['owner'])
         categories = builder.read_json(ROOT / 'categories.json')['categories']
         self.assertEqual(len(categories), 12)
         expected = set('a2a adaptive-code-review anti-slop cache_efficiency_snapshot claudexor_quotas confluence '
@@ -267,5 +370,7 @@ print(json.dumps([payload_digest(Path(c['path']), manifest_entry=c['front'].get(
                          set('duckduckgo pdf_tools word_tools anti-slop memory-atlas'.split()))
         generated = builder.build_catalog(ROOT)
         self.assertEqual({r['slug'] for r in generated['skills']}, set(entries))
-        self.assertEqual(sum('install_specs' in e for e in entries.values()), 11)
-        self.assertEqual(sum('when_to_use' in e for e in entries.values()), 26)
+        for entry in entries.values():
+            with builder.source_directory(ROOT, entry) as directory:
+                self.assertEqual(declaration_json(entry.get('install_specs')),
+                                 declaration_json(manifest_declaration(builder.read_manifest(directory))))

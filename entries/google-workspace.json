@@ -3,7 +3,7 @@
     "documents"
   ],
   "description": "Universal Google Workspace integration for Google Sheets, Docs, and Drive via Service Account authentication.",
-  "digest": "sha256v2:939e153c362741260238ad55e4e62ca5e3d5756e5efa35d1475d56efc75dc710",
+  "digest": "01b531c2383f443eeeb8cb597530e96c712223b471150c10bbb673e0ccba4454",
   "install_specs": [
     "httpx>=0.24.0",
     "cryptography>=41.0.0"

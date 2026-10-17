@@ -16,11 +16,9 @@ import sys
 import tempfile
 from urllib.parse import urlsplit
 
-import yaml
-
 if __package__ in {None, ''}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.release_digest import payload_digest, payload_files
+from scripts.release_digest import declaration_json, manifest_declaration, payload_digest, payload_files, read_manifest
 
 def _canonical_name(slug: str) -> str:
     """Ouroboros skill_manifest canonical_skill_name: installation identity.
@@ -156,8 +154,8 @@ def login(value, label):
 
 
 def release_hash(value):
-    if not isinstance(value, str) or not re.fullmatch(r'sha256v2:[0-9a-f]{64}', value):
-        raise ValueError('digest: expected sha256v2: and 64 lowercase hex digits')
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9a-f]{64}', value):
+        raise ValueError('digest: expected 64 lowercase hex digits (release identity v2)')
 
 
 def relative_path(value, *, allow_root=False):
@@ -193,8 +191,6 @@ def validate_entry(entry, categories):
             text_field(entry[field], field)
     if 'type' in entry and entry['type'] not in ('instruction', 'script', 'extension'):
         raise ValueError(f'{name}: invalid type')
-    if 'install_specs' in entry and not isinstance(entry['install_specs'], list):
-        raise ValueError(f'{name}: install_specs must be a list')
     withdrawn = entry['withdrawn']
     if withdrawn is not None:
         object_fields(withdrawn, ('reason', 'at'), label='withdrawn')
@@ -277,33 +273,18 @@ def load_hub(root: Path):
     return hub, entries, official
 
 
-def read_manifest(directory: Path):
-    text = (directory / 'SKILL.md').read_text(encoding='utf-8')
-    front = {}
-    if text.startswith('---'):
-        parts = text.split('---', 2)
-        if len(parts) >= 3:
-            try:
-                front = yaml.safe_load(parts[1]) or {}
-            except yaml.YAMLError as exc:
-                raise ValueError(f'{directory.name}: invalid SKILL.md frontmatter') from exc
-    if not isinstance(front, dict):
-        raise ValueError(f'{directory.name}: SKILL.md frontmatter must be an object')
-    return front
-
-
-def run_git(args, directory):
+def run_git(args, directory, *, env=None):
     # A deadline owns the entire git/transport process group, including transport helpers.
     with subprocess.Popen(['git', *args], cwd=directory, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          start_new_session=True, env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'}) as process:
+                          start_new_session=True, env={**(env or os.environ), 'GIT_TERMINAL_PROMPT': '0'}) as process:
         try:
             stdout, _stderr = process.communicate(timeout=120)
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGKILL)
             process.communicate()
-            raise ValueError('git source fetch timed out') from None
+            raise ValueError('git command timed out') from None
         if process.returncode:
-            raise ValueError('git source fetch failed; check the repository and pinned commit')
+            raise ValueError('git command failed; check the repository, commit and access')
         return stdout.decode('utf-8').strip()
 
 
@@ -331,8 +312,21 @@ def source_directory(root, entry):
 
 def release_digest(directory, entry):
     front = read_manifest(directory)
-    return payload_digest(directory, manifest_entry=front.get('entry', ''), manifest_scripts=front.get('scripts'),
-                          install_specs=entry.get('install_specs'))
+    return payload_digest(directory, manifest_entry=front.get('entry', ''), manifest_scripts=front.get('scripts'))
+
+
+def refresh_entry(root, entry):
+    """Explicit author operation; an endorsement is never renewed automatically."""
+    with source_directory(root, entry) as directory:
+        front = read_manifest(directory)
+        declaration = manifest_declaration(front)
+        if declaration is None:
+            entry.pop('install_specs', None)
+        else:
+            entry['install_specs'] = json.loads(declaration_json(declaration))
+        entry['version'] = str(front.get('version', '0.1.0'))
+        entry['digest'] = release_digest(directory, entry)
+    return entry
 
 
 def catalog_row(directory, entry=None):
@@ -350,10 +344,27 @@ def catalog_row(directory, entry=None):
     return row
 
 
+def legacy_raw_base(root):
+    """Pin legacy downloads to their payload commit, stable across catalog-only commits.
+
+    Uncommitted author previews (or exported trees without history) use main. CI and
+    publication run from a clean checkout with full history and always get an exact pin.
+    """
+    ref = 'main'
+    if (root / '.git').exists() and not run_git(['status', '--porcelain', '--', 'skills'], root):
+        commit = run_git(['log', '-1', '--first-parent', '--format=%H', '--', 'skills'], root)
+        if re.fullmatch(r'[0-9a-f]{40}', commit):
+            ref = commit
+    return f'https://raw.githubusercontent.com/razzant/OuroborosHub/{ref}'
+
+
 def build_catalog(root: Path) -> dict:
     hub, entries, _official = load_hub(root)
     for entry in entries.values():
         with source_directory(root, entry) as directory:
+            declaration = manifest_declaration(read_manifest(directory))
+            if declaration_json(entry.get('install_specs')) != declaration_json(declaration):
+                raise ValueError(f"{entry['name']}: install_specs must copy the raw manifest declaration; use --refresh")
             if release_digest(directory, entry) != entry['digest']:
                 raise ValueError(f"{entry['name']}: release digest mismatch; update the entry and any endorsement")
             if str(read_manifest(directory).get('version', '0.1.0')) != entry['version']:
@@ -366,24 +377,33 @@ def build_catalog(root: Path) -> dict:
             entry = entries.get(directory.name)
             rows.append(catalog_row(directory, entry if entry and entry['source']['kind'] == 'hosted' else None))
     catalog = {'schema_version': 1, 'name': hub['name'], 'description': 'Official Ouroboros skills catalog.',
-               'raw_base_url': 'https://raw.githubusercontent.com/razzant/OuroborosHub/main', 'skills': rows}
+               'raw_base_url': legacy_raw_base(root), 'skills': rows}
     validate_catalog(root, catalog)
     return catalog
 
 
 def main(argv=None, *, root=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--check', action='store_true', help='validate releases and require byte-identical generated catalog')
-    parser.add_argument('--digest', metavar='NAME', help='print a release digest without rewriting files')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--check', action='store_true', help='validate releases and require byte-identical generated catalog')
+    mode.add_argument('--digest', metavar='NAME', help='print a release digest without rewriting files')
+    mode.add_argument('--refresh', metavar='NAME', help='copy manifest declaration/version and release digest into an entry')
     args = parser.parse_args(argv)
     root = root or Path(__file__).resolve().parents[1]
     try:
-        if args.digest:
-            if args.digest != _canonical_name(args.digest):
+        if args.digest or args.refresh:
+            name = args.digest or args.refresh
+            if name != _canonical_name(name):
                 raise ValueError('invalid name')
-            entry = read_json(root / 'entries' / f'{args.digest}.json')
-            with source_directory(root, entry) as directory:
-                print(release_digest(directory, entry))
+            path = root / 'entries' / f'{name}.json'
+            entry = read_json(path)
+            if entry['name'] != name:
+                raise ValueError('entry filename and name must match')
+            if args.refresh:
+                path.write_bytes(json_bytes(refresh_entry(root, entry)))
+            else:
+                with source_directory(root, entry) as directory:
+                    print(release_digest(directory, entry))
             return 0
         catalog = build_catalog(root)
         encoded = json_bytes(catalog)

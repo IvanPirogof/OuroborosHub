@@ -3,7 +3,7 @@
     "documents"
   ],
   "description": "Read structured DOCX documents and build new Word documents from lightly structured text.",
-  "digest": "sha256v2:19ec32f7ea8b65c0952144c05a971ed85557ac35260325c2cb5f4b3b3ec20c73",
+  "digest": "8250c81f2c6ccd2032fee27e3e1b0962bd22f9283e7d00d384a04e434b05a106",
   "install_specs": [
     {
       "kind": "pip",

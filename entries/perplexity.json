@@ -3,7 +3,7 @@
     "search"
   ],
   "description": "Deep web research via OpenRouter web_search server tool. Uses any model + grounded search with citations. Requires OPENROUTER_API_KEY in Settings.",
-  "digest": "sha256v2:f7fef7d90bde2761a169203072b5efbfb62d76b1ec816a394c85a10d38f1d3c6",
+  "digest": "f7807b0f5606a3b2f73fc5b09b042a230fddd3d2d4dd4f8a5f98fc142af265a2",
   "name": "perplexity",
   "owner": "razzant",
   "schema_version": 2,

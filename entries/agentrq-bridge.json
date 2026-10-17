@@ -3,7 +3,7 @@
     "messaging"
   ],
   "description": "AgentRQ integration: structured HITL task board, permission gating, and real-time workspace bridge via MCP Streamable HTTP",
-  "digest": "sha256v2:907d59c1b38e02dddf564d72effab1659733a1ef9abe2cc1196d4cc91a625fcb",
+  "digest": "81283a3c7c35524c703af0c4d7c7c29c25f30dc4f434a92ca5f7e8dd7f16b551",
   "name": "agentrq-bridge",
   "owner": "kuznetsoffandrey",
   "schema_version": 2,

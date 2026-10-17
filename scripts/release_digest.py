@@ -1,18 +1,20 @@
-"""Portable sha256v2 identity; never import or execute a skill or the core runtime.
+"""Portable release identity v2; never import or execute a skill or the core runtime.
 
 Contract: ouroboros.skill_identity.payload_digest and skill_loader._iter_payload_files.
 Keep the walk (including inert assets and declared entries under cache directories),
-top-level note exclusions, reduction and install-spec normalization in sync with core.
+top-level note exclusions, reduction and raw declaration hash in sync with core WP-B2.
 """
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path, PurePosixPath
+import re
 import stat
 
-from .install_specs import install_specs_hash, normalize_install_specs
+import yaml
 
-DIGEST_PREFIX = 'sha256v2:'
+DIGEST_DOMAIN = b'ouroboros-skill-release/2\0'
 PER_INSTALL_NOTE_FILENAMES = frozenset({
     '.seed-origin', '.ouroboroshub.json', '.clawhub.json', '.self_authored.json',
 })
@@ -45,9 +47,6 @@ def payload_files(skill_dir: Path, *, manifest_entry='', manifest_scripts=None) 
                 candidates.append(path)
     for path in sorted(candidates):
         if not path.is_file():
-            continue
-        if (path.name == '.seed-origin' and path.parent == root
-                and root.parent.name == 'native'):
             continue
         if path.name.lower() in SENSITIVE_NAMES or path.name.lower().endswith('.env'):
             raise ValueError(f'{path.relative_to(root)}: credential-shaped payload file')
@@ -90,15 +89,69 @@ def file_facts(path: Path) -> tuple[str, int]:
     return digest.hexdigest(), size
 
 
-def payload_digest(skill_dir: Path, *, manifest_entry='', manifest_scripts=None, install_specs=None) -> str:
+def read_manifest(directory: Path):
+    """Core's JSON / YAML frontmatter / body-only selection, without runtime imports."""
+    for name in ('SKILL.md', 'skill.json'):
+        path = directory / name
+        if path.is_file():
+            text = path.read_text(encoding='utf-8').lstrip('\ufeff')
+            break
+    else:
+        raise ValueError(f'{directory.name}: missing skill manifest')
+    try:
+        if text.lstrip().startswith('{'):
+            front = json.loads(text.lstrip())
+        else:
+            match = re.match(r'\A---\s*\n(.*?)\n---\s*\n?(.*)\Z', text, re.DOTALL)
+            front = (yaml.safe_load(match[1]) or {}) if match else {}
+    except (ValueError, yaml.YAMLError) as exc:
+        raise ValueError(f'{directory.name}: invalid skill manifest') from exc
+    if not isinstance(front, dict):
+        raise ValueError(f'{directory.name}: manifest must be an object')
+    return front
+
+
+def empty(value):
+    return value is None or value == '' or value == [] or value == {}
+
+
+def manifest_declaration(front):
+    for key in ('install_specs', 'install', 'dependencies'):
+        if not empty(front.get(key)):
+            return front[key]
+    return None
+
+
+def declaration_json(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, default=str)
+
+
+def release_declaration(directory: Path):
+    for name in ('.ouroboroshub.json', '.clawhub.json'):
+        try:
+            row = json.loads((directory / name).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        specs = row.get('install_specs') if isinstance(row, dict) else None
+        if isinstance(specs, dict):
+            for key in ('raw', 'auto'):
+                if not empty(specs.get(key)):
+                    return specs[key]
+    return manifest_declaration(read_manifest(directory))
+
+
+def payload_digest(skill_dir: Path, *, manifest_entry='', manifest_scripts=None) -> str:
     root = skill_dir.resolve()
-    digest = hashlib.sha256()
-    for path in payload_files(root, manifest_entry=manifest_entry, manifest_scripts=manifest_scripts):
-        digest.update(path.relative_to(root).as_posix().encode('utf-8'))
+    digest = hashlib.sha256(DIGEST_DOMAIN)
+    # Sort POSIX strings, not Path components: a.txt precedes a/z.txt.
+    pairs = {path.relative_to(root).as_posix(): file_facts(path)[0] for path in payload_files(
+        root, manifest_entry=manifest_entry, manifest_scripts=manifest_scripts)}
+    for relative in sorted(pairs):
+        digest.update(relative.encode('utf-8'))
         digest.update(b'\0')
-        digest.update(bytes.fromhex(file_facts(path)[0]))
-    auto, _manual, _warnings = normalize_install_specs(install_specs or [])
-    if auto:
+        digest.update(bytes.fromhex(pairs[relative]))
+    declaration = release_declaration(root)
+    if not empty(declaration):
         digest.update(b'\0install_specs\0')
-        digest.update(install_specs_hash(auto).encode('utf-8'))
-    return DIGEST_PREFIX + digest.hexdigest()
+        digest.update(hashlib.sha256(declaration_json(declaration).encode('utf-8')).hexdigest().encode('ascii'))
+    return digest.hexdigest()

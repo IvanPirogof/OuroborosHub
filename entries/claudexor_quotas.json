@@ -3,7 +3,7 @@
     "ouroboros"
   ],
   "description": "Claudexor quota widget and read-only quota_summary tool: one bar per account and limit (current, dated last-known, or unknown — never zero), reserve in account-windows with coverage, restrictions and reported resets, and under the chosen limit a timeline — its recorded past and one conditional future (no new use, or the recent pace) of the accounts read now, with its reset schedule — from a bounded local history of passive readings.",
-  "digest": "sha256v2:72ee790396e8a9899adfb3eeb24e771b8041f011600e01e67b51cc1b99d8f3c0",
+  "digest": "77d70bab295064183972cc1ed01959e5ba6dbb2ec4377bc587aca1dae5027759",
   "name": "claudexor_quotas",
   "owner": "razzant",
   "schema_version": 2,

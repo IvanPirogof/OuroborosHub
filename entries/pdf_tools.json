@@ -3,7 +3,7 @@
     "documents"
   ],
   "description": "Read PDF documents page by page and build new PDF files from text or structured answers with Unicode-capable fonts.",
-  "digest": "sha256v2:c7287cc5aa92dd81a144640c263ed6e451ca2c02db2b934abb76cf332140d598",
+  "digest": "42983d82fa1cb5ed03abc6c7a6aeb68ce6063cce1159389981586634fa52f25d",
   "install_specs": [
     {
       "kind": "pip",

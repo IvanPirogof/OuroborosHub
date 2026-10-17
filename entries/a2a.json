@@ -3,7 +3,7 @@
     "messaging"
   ],
   "description": "Agent-to-Agent protocol bridge for Ouroboros. Provides a local A2A-compatible server plus client tools for discovering and messaging other A2A agents.",
-  "digest": "sha256v2:19398c5de7fb166499c981cc89932321234bb8f1e6bfaf41194ccaf8e23e6040",
+  "digest": "16fdc08dd0cf84a0c1986f7908500116dfab010fde204a0e1bf4427d99235fe9",
   "install_specs": [
     {
       "kind": "pip",

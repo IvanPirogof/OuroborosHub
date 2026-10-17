@@ -3,7 +3,7 @@
     "media"
   ],
   "description": "Generate a music clip from a text prompt via OpenRouter's Google Lyria model and play it directly inside the widget. Files are persisted to the skill's private state directory and streamed through an extension route for both inline playback and download.",
-  "digest": "sha256v2:ab9177fa9721ad4d966bdc098a85c7e83cbf58a85d90e4bbbf8a233056aa73a4",
+  "digest": "566ae35e930891414a1a1af898501f1bc84ed2215e6e68c03f8283e718302e91",
   "name": "music_gen",
   "owner": "razzant",
   "schema_version": 2,

@@ -3,7 +3,7 @@
     "media"
   ],
   "description": "Generate a short video clip via OpenRouter's video generation API using Seedance 2.0 (bytedance/seedance-2.0). Output is saved to the skill state directory.",
-  "digest": "sha256v2:8d2d5198ebed837b07f00f39f82b3706fa11e07fb4cade72a2684334d228e15a",
+  "digest": "502dacb8a4a7635a4a26932a6b01e5a08317657536a2f0facd7ed75796c6cbb5",
   "name": "video_gen",
   "owner": "razzant",
   "schema_version": 2,

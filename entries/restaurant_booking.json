@@ -3,7 +3,7 @@
     "city"
   ],
   "description": "Оркестратор автоматического бронирования ресторанов: нормализует список ресторанов, формирует задачу для агента-исполнителя и валидирует результат.",
-  "digest": "sha256v2:468b0b30cf590ac26254d55cd3b27b88df7417f4bb35f1c71882a74d7f344e71",
+  "digest": "6a631aec59c37574ae9d1c2202bac88ca4bb62d963a7b486fe0e5dd3358054f4",
   "name": "restaurant_booking",
   "owner": "seva8756",
   "schema_version": 2,

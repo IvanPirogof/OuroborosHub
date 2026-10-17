@@ -3,7 +3,7 @@
     "media"
   ],
   "description": "Hollywood-grade photorealistic video production with Gemini multimodal AV QC, parallel best-of-N candidate generation, effort-based quality control (low/regular/max), voice/dialogue synthesis, and Director cross-scene review",
-  "digest": "sha256v2:4aba3e6bb194ee1c31738c831d1c0556b240b195e54b653de9e738470595d08c",
+  "digest": "7da0b7706efe864fcc8167c684dc8f3bb248f462ab9711582fe125a05af2b45a",
   "install_specs": [
     "Pillow"
   ],

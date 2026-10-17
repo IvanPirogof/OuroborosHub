@@ -4,7 +4,7 @@
     "health"
   ],
   "description": "Сбор данных со смарт-браслета WHOOP через официальный API v2: сон, recovery, strain, тренировки, HRV, пульс покоя, SpO2. Полный OAuth2 Authorization Code flow для первичной авторизации и автоматическое обновление токенов.",
-  "digest": "sha256v2:488baedc00cbfa33bfab77e80f942cce8592d5dd2488bc2d53743b2b41b00ca9",
+  "digest": "59225dc5d1caad03df206c1ef27255f4aa5eb4d8758f7563bed22d56b8b75f58",
   "name": "whoop-health",
   "owner": "kuznetsoffandrey",
   "schema_version": 2,

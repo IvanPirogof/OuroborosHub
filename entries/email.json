@@ -3,7 +3,7 @@
     "messaging"
   ],
   "description": "Public universal skill for reading and sending email via IMAP and SMTP with secure defaults.",
-  "digest": "sha256v2:12cba84960c2be5a8aeebc2459212a842e22af7a6f8d73fdd4f9c4fa4540b45e",
+  "digest": "b8e4f80860aaf9b3bfbd9c5953dbe7ba88cf7a3eca0c7b79f3ac4c24b7efea56",
   "name": "email",
   "owner": "razzant",
   "schema_version": 2,

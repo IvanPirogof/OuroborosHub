@@ -3,7 +3,7 @@
     "ouroboros"
   ],
   "description": "Read-only chart of model-request input sizes from the local usage store, with honest freshness and coverage.",
-  "digest": "sha256v2:4d7af7234c98c918aef1344bd13e17241833084642db77db6521c82c78bbe5f3",
+  "digest": "728c992edd4b22a7a7c2bf78983052274120b0e97b110ef6fbe18e024e6ad43d",
   "name": "context-lens",
   "owner": "razzant",
   "schema_version": 2,

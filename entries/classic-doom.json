@@ -3,7 +3,7 @@
     "games"
   ],
   "description": "Fully playable Classic Doom (1993) standalone 2.5D FPS raycaster extension widget with textured walls, procedural sprite enemies, authentic weapons, levels, HUD, Web Audio sound and heavy metal music synthesizer.",
-  "digest": "sha256v2:4eddda376cc77cf6ce47ecbeec20b32eeeab51495208afca9f5eb7deaf515bff",
+  "digest": "b4d885ac85aa4a1c0cbf7e60b42e858e3bc7da08e0d6a792dfea415dc360df57",
   "name": "classic-doom",
   "owner": "razzant",
   "schema_version": 2,

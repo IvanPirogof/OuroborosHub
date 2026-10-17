@@ -3,7 +3,7 @@
     "writing"
   ],
   "description": "Evidence-qualified code review adapted to the user's decision, project and risks.",
-  "digest": "sha256v2:c177432d478c9d59b3cf3343727340c794eb77a79c8f69358e774c7900d26ac1",
+  "digest": "5ff5a1e88045929ef34981fdce4b6dadd086c1d1abb9a330168705c98b49a64d",
   "name": "adaptive-code-review",
   "owner": "ouroboros-agent",
   "schema_version": 2,

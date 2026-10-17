@@ -3,7 +3,7 @@
     "writing"
   ],
   "description": "Evidence-informed writing prompt and checklist for substantive, calibrated prose that preserves voice and fits the reader, genre, and requested language.",
-  "digest": "sha256v2:e74490803601cce88c4eeff39578ce7d7fa687b9f494b3b775a316884e4fa196",
+  "digest": "9618521e5113ead1a7acd79a46feb135cd1d10ca6061000c672082867ab801f1",
   "name": "anti-slop",
   "owner": "ouroboros-agent",
   "schema_version": 2,

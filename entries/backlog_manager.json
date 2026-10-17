@@ -3,7 +3,7 @@
     "planning"
   ],
   "description": "Interactive Improvement Backlog widget with kanban status management, filtering data, notes, and local item creation without mutating Ouroboros core memory directly.",
-  "digest": "sha256v2:fed0815f0ab1436ae2effa1fbeb6ba795c5297ec15a53c6363cedfe828d8eb58",
+  "digest": "6cd2ea1e87a40a688e53ab60aa08db54bdc006f576af39929172ddab0336eec6",
   "name": "backlog_manager",
   "owner": "razzant",
   "schema_version": 2,

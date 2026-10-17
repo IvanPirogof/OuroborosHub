@@ -3,7 +3,10 @@
     "documents"
   ],
   "description": "Read, search and author Confluence Cloud pages, comments and attachments using an existing personal or scoped API token.",
-  "digest": "sha256v2:a2c3c019223962274d68c8f181db2510d65d39836390bde7c4913ba6e88f3574",
+  "digest": "890d0acfb25d40d481684863ce8d1e75cacd4a54908c7aabe2d2f08ec2653a22",
+  "install_specs": [
+    "httpx>=0.27.0"
+  ],
   "name": "confluence",
   "owner": "razzant",
   "schema_version": 2,

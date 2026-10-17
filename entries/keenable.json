@@ -3,7 +3,7 @@
     "search"
   ],
   "description": "Focused web search and source reading, with site/date filters and a searchable page reader.",
-  "digest": "sha256v2:c5f89cdf9a7ee02fa4b2d48b810ca0733e428c523d8da22cd15aba8d7a547d23",
+  "digest": "7d5dcdf9407b1e327a528cea075bf9f1d086af5d80fdbb96e2c89fc8eda01701",
   "name": "keenable",
   "owner": "razzant",
   "schema_version": 2,

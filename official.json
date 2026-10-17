@@ -1,92 +1,92 @@
 {
   "endorsements": [
     {
-      "digest": "sha256v2:19398c5de7fb166499c981cc89932321234bb8f1e6bfaf41194ccaf8e23e6040",
+      "digest": "16fdc08dd0cf84a0c1986f7908500116dfab010fde204a0e1bf4427d99235fe9",
       "name": "a2a",
       "recommended": false
     },
     {
-      "digest": "sha256v2:c177432d478c9d59b3cf3343727340c794eb77a79c8f69358e774c7900d26ac1",
+      "digest": "5ff5a1e88045929ef34981fdce4b6dadd086c1d1abb9a330168705c98b49a64d",
       "name": "adaptive-code-review",
       "recommended": false
     },
     {
-      "digest": "sha256v2:e74490803601cce88c4eeff39578ce7d7fa687b9f494b3b775a316884e4fa196",
+      "digest": "9618521e5113ead1a7acd79a46feb135cd1d10ca6061000c672082867ab801f1",
       "name": "anti-slop",
       "recommended": true
     },
     {
-      "digest": "sha256v2:5a00dfeb6f9039fb29f65475902409b29116ca0d2b9980972ae9602932b439c4",
+      "digest": "e903d971ff5c56945a87b7e427f83c69a60be7c479219a6cad0a62d59d113305",
       "name": "cache_efficiency_snapshot",
       "recommended": false
     },
     {
-      "digest": "sha256v2:72ee790396e8a9899adfb3eeb24e771b8041f011600e01e67b51cc1b99d8f3c0",
+      "digest": "77d70bab295064183972cc1ed01959e5ba6dbb2ec4377bc587aca1dae5027759",
       "name": "claudexor_quotas",
       "recommended": false
     },
     {
-      "digest": "sha256v2:a2c3c019223962274d68c8f181db2510d65d39836390bde7c4913ba6e88f3574",
+      "digest": "890d0acfb25d40d481684863ce8d1e75cacd4a54908c7aabe2d2f08ec2653a22",
       "name": "confluence",
       "recommended": false
     },
     {
-      "digest": "sha256v2:4d7af7234c98c918aef1344bd13e17241833084642db77db6521c82c78bbe5f3",
+      "digest": "728c992edd4b22a7a7c2bf78983052274120b0e97b110ef6fbe18e024e6ad43d",
       "name": "context-lens",
       "recommended": false
     },
     {
-      "digest": "sha256v2:09e7f03461732668a2981a75ad61779ea71406ed8ec3ea20ad859a68598ca385",
+      "digest": "4f8613be4dc4bab36b9effba01748f367419f1f536a19aec5c88f9a22c2dd90e",
       "name": "duckduckgo",
       "recommended": true
     },
     {
-      "digest": "sha256v2:12cba84960c2be5a8aeebc2459212a842e22af7a6f8d73fdd4f9c4fa4540b45e",
+      "digest": "b8e4f80860aaf9b3bfbd9c5953dbe7ba88cf7a3eca0c7b79f3ac4c24b7efea56",
       "name": "email",
       "recommended": false
     },
     {
-      "digest": "sha256v2:75416c64dc600b86d65693b8eeec3388b6e7e6cd58ffcad7a092727825f42074",
+      "digest": "b836c567c2ecdc301c0e9adc9900f21b23f908ae708f41571fb841c5a329cc92",
       "name": "email-presence",
       "recommended": false
     },
     {
-      "digest": "sha256v2:939e153c362741260238ad55e4e62ca5e3d5756e5efa35d1475d56efc75dc710",
+      "digest": "01b531c2383f443eeeb8cb597530e96c712223b471150c10bbb673e0ccba4454",
       "name": "google-workspace",
       "recommended": false
     },
     {
-      "digest": "sha256v2:c5f89cdf9a7ee02fa4b2d48b810ca0733e428c523d8da22cd15aba8d7a547d23",
+      "digest": "7d5dcdf9407b1e327a528cea075bf9f1d086af5d80fdbb96e2c89fc8eda01701",
       "name": "keenable",
       "recommended": false
     },
     {
-      "digest": "sha256v2:e8c2e613f3c9df4c638fa1df50b060e943a3a82c6b54f44f05d57d8bcf9e2269",
+      "digest": "5ecfd106676eb0c697e78f6beb8bea56faeca9c7074feee97299333754558de8",
       "name": "memory-atlas",
       "recommended": true
     },
     {
-      "digest": "sha256v2:c7287cc5aa92dd81a144640c263ed6e451ca2c02db2b934abb76cf332140d598",
+      "digest": "42983d82fa1cb5ed03abc6c7a6aeb68ce6063cce1159389981586634fa52f25d",
       "name": "pdf_tools",
       "recommended": true
     },
     {
-      "digest": "sha256v2:f7fef7d90bde2761a169203072b5efbfb62d76b1ec816a394c85a10d38f1d3c6",
+      "digest": "f7807b0f5606a3b2f73fc5b09b042a230fddd3d2d4dd4f8a5f98fc142af265a2",
       "name": "perplexity",
       "recommended": false
     },
     {
-      "digest": "sha256v2:39ff0302ba79bb388d4ff5699cc80bf0f6c0437252e6bdf17bb479f9b2010306",
+      "digest": "d4c4a2003093b1673828e5174d0e8be1adad28d53a4c4429b784293c7d53ac07",
       "name": "slack-bridge",
       "recommended": false
     },
     {
-      "digest": "sha256v2:29be90f6fd928588c20f4bdbba3935de8229be3f364db862c95f65bceb080433",
+      "digest": "f3541371e66f6914966c97f15fbfcf070f3121b86164bc1af0481b65318bf480",
       "name": "telegram-bot",
       "recommended": false
     },
     {
-      "digest": "sha256v2:19ec32f7ea8b65c0952144c05a971ed85557ac35260325c2cb5f4b3b3ec20c73",
+      "digest": "8250c81f2c6ccd2032fee27e3e1b0962bd22f9283e7d00d384a04e434b05a106",
       "name": "word_tools",
       "recommended": true
     }

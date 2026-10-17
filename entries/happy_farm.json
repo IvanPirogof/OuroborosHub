@@ -3,7 +3,7 @@
     "games"
   ],
   "description": "Comprehensive, charming, and fully playable Happy Farm game widget with crops, livestock, economy, orders, day-night/weather cycles, and audio.",
-  "digest": "sha256v2:801aa0c587e562c2388126e6d26546a54438af4a3280282c089432c433ecc4fd",
+  "digest": "fa788787d5fc89599e998de4d602606f90712b58534d13273027bf4993dc7c16",
   "name": "happy_farm",
   "owner": "razzant",
   "schema_version": 2,

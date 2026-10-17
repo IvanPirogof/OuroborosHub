@@ -3,7 +3,7 @@
     "documents"
   ],
   "description": "Inspect, filter, sort, group, and aggregate CSV and XLSX tables while reporting truncation and non-numeric values honestly.",
-  "digest": "sha256v2:277b14dc57d623527ab7f532d055720068cc0e9bcb86a3ff195606a98949b439",
+  "digest": "4e24776e52cbde4fcac39f03733881019b4b09f656f4f2dc7531ad39c80a0efd",
   "install_specs": [
     {
       "kind": "pip",

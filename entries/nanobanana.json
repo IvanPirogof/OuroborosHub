@@ -3,7 +3,7 @@
     "media"
   ],
   "description": "Generate images from a text prompt via OpenRouter's image generation API (Nano Banana / Gemini Flash Image). Displays the result inside the widget and saves to disk for download.",
-  "digest": "sha256v2:81407d2d66a2ea872340c84f86ab291bee022daa8bb8cdd9c3d68d179f3a6e09",
+  "digest": "369c3698d2255b4a503a1ac9fa74ae1a72eb9e6966d528f3f9b09a84ad9a1bd0",
   "name": "nanobanana",
   "owner": "razzant",
   "schema_version": 2,
