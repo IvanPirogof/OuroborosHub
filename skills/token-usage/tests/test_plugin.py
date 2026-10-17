@@ -224,7 +224,7 @@ class PluginContractTests(OwnedTemporaryCase):
 
     def test_exact_host_registration_ui_cleanup_and_lazy_start(self):
         api, service = self.register_fake()
-        self.assertEqual(set(api.routes), {"data", "export", "preferences"})
+        self.assertEqual(set(api.routes), {"data", "export", "preferences", "chip"})
         self.assertEqual(api.tabs, {"observatory": {"title": "Token Observatory", "icon": "◉", "render": {
             "kind": "module", "entry": "widget.js", "appearance": "host", "height": 560, "span": 2, "start": "manual"}}})
         self.assertIs(service.index.stop_event, service._stop)

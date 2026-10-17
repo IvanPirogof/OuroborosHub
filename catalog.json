@@ -1957,8 +1957,8 @@
         },
         {
           "path": "tests/test_plugin.py",
-          "sha256": "92330064f149c4b66507951d4e27be1c302a12fa9b8e148c111fb67c848f10b4",
-          "size": 25298
+          "sha256": "9e50dbd5182e0b194f694ae8ef66f5a1380136e2a8a53095dc68de4625ae438c",
+          "size": 25306
         },
         {
           "path": "tests/widget_contract.cjs",
