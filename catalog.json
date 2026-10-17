@@ -2241,8 +2241,8 @@
         },
         {
           "path": "plugin.py",
-          "sha256": "6ea36f58bd4d69c1a25953dfb6e9c42b7fea5e99504991273ad56d7ae96f6b75",
-          "size": 37196
+          "sha256": "070bb599e25ed01ad64b83953215ce9ac4995d0e2daafd11d61556571509cb51",
+          "size": 37198
         },
         {
           "path": "tests/test_capture_route.py",
@@ -2256,8 +2256,8 @@
         },
         {
           "path": "tests/test_smart_lists.py",
-          "sha256": "e4a9d026e9e223bce1c204e4e5caf17303a2d9ef7b2f4f5627b4693b1e89591a",
-          "size": 119836
+          "sha256": "560b89223608bc49972d0526906f0695f6447e9238f6b83892b540fe55186143",
+          "size": 120083
         },
         {
           "path": "widget.js",

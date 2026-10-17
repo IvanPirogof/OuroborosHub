@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from uuid import uuid4
+import secrets
 
 from starlette.responses import JSONResponse
 
@@ -706,7 +706,7 @@ async def route_add(request: Any) -> JSONResponse:
     def add() -> Dict[str, Any]:
         service = _service()
         group = body.get("group") or "Inbox"
-        request_id = body.get("request_id") or f"capture-{uuid4().hex}"
+        request_id = body.get("request_id") or f"capture-{secrets.token_hex(16)}"
         items = [{"text": body.get("text")}]
         try:
             return service.add(group, items, request_id=request_id)
