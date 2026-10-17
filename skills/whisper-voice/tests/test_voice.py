@@ -313,8 +313,9 @@ def test_mp4_signature_matches_only_at_offset_four(mime):
 
 def test_mp4_decodes_through_pyav_before_local_transcription(tmp_path, monkeypatch):
     import io
-    import av
-    import numpy as np
+
+    av = pytest.importorskip("av")  # the skill's isolated runtime installs PyAV; a bare checkout may not have it
+    np = pytest.importorskip("numpy")
 
     monkeypatch.setenv("OUROBOROS_SKILL_STATE_DIR", str(tmp_path))
     spec = importlib.util.spec_from_file_location("voice_mp4_test", ROOT / "scripts" / "companion.py")

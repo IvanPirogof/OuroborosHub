@@ -2598,8 +2598,8 @@
         },
         {
           "path": "tests/test_voice.py",
-          "sha256": "9020ec28fc9dce6da88e49a1ffc8aa74280a334a26be5442b473d79e9c86fd18",
-          "size": 15217
+          "sha256": "e023d89fec3369ba21c99d8e28626d921259d3c25eb8fe6c0ce897142caddc36",
+          "size": 15333
         },
         {
           "path": "whisper_runtime.py",
