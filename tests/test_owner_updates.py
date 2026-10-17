@@ -95,10 +95,21 @@ class OwnerUpdateTests(unittest.TestCase):
         return owner.merge_owner_update(self.api, {'workflow_run': {'id': 90}}, REPO)
 
     def test_existing_community_owner_merges_exact_validated_head(self):
+        self.assertEqual(owner.REQUIRED_JOBS, {'checks'})
         self.assertEqual(self.merge(), 12)
         self.assertEqual([c for c in self.api.calls if c[0] == 'PUT'], [
             ('PUT', f'/repos/{REPO}/pulls/12/merge', {'sha': HEAD, 'merge_method': 'squash'})])
         self.assertEqual({c[1] for c in self.api.calls if c[0] == 'contents'}, {'entries/demo.json', 'official.json'})
+
+    def test_aggregate_success_allows_unaffected_suites_to_be_skipped(self):
+        self.api.jobs.append({'name': 'hosted-skills', 'status': 'completed', 'conclusion': 'skipped'})
+        self.assertEqual(self.merge(), 12)
+        for conclusion in ('failure', 'cancelled', 'skipped'):
+            self.api = API()
+            self.api.jobs[0]['conclusion'] = conclusion
+            with self.subTest(conclusion=conclusion), self.assertRaises(owner.Ineligible):
+                self.merge()
+            self.assertFalse(any(c[0] == 'PUT' for c in self.api.calls))
 
     def test_fork_run_without_associated_pr_list_still_binds_head_repository_and_sha(self):
         self.api.run['pull_requests'] = []

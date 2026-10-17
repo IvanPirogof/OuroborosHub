@@ -123,8 +123,9 @@ leave the generated catalog to publication if you want owner automerge.
 
 A PR is automatically merged only when it changes one existing entry (plus that
 skill's hosted files), its author is the owner recorded on main, the owner stays
-unchanged, the name has no Official endorsement, and all three validation jobs
-pass. The merge uses the exact validated head SHA. New names, ownership transfers,
+unchanged, the name has no Official endorsement, and the aggregate `checks` job
+passes. It requires catalog validation and every selected hosted suite to pass;
+unaffected suites may be skipped. The merge uses the exact validated head SHA. New names, ownership transfers,
 Official changes, workflow changes and changes outside that skill need maintainer
 review.
 
@@ -197,9 +198,13 @@ they do not confer Official status or grant execution authority.
 
 ## Tests and widgets
 
-CI keeps the catalog, Smart Lists, GigaSearch, cache-efficiency, widget contracts,
-calendar and transport suites. The transport job uses separate pytest invocations
-so its two `test_retained_custody.py` modules and sibling-test imports can coexist:
+CI always validates the catalog and maintenance workflows. On PRs, each hosted
+suite runs only when its skill, tests or shared dependencies change; paths and
+dependencies live in `scripts/ci_checks.py`. Main pushes and manual runs select
+every suite. Require the single `checks` job in branch protection: it fails on any
+failed or cancelled dependency and accepts skipped suites. Slack and Telegram run
+in separate jobs so their `test_retained_custody.py` modules and sibling-test
+imports can coexist:
 
 ```bash
 python -m pip install pytest httpx starlette websockets

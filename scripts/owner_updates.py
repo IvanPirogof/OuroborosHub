@@ -22,7 +22,7 @@ from scripts.github_api import APIError, GitHub
 
 ARTIFACT = 'owner-update-verdict'
 WORKFLOW = '.github/workflows/catalog-check.yml'
-REQUIRED_JOBS = {'catalog', 'calendar-skill', 'transport-skills'}
+REQUIRED_JOBS = {'checks'}
 
 
 class Ineligible(ValueError):

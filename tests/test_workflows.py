@@ -3,8 +3,12 @@ from __future__ import annotations
 
 import base64
 import io
+import itertools
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -13,7 +17,7 @@ from urllib.request import Request
 
 import yaml
 
-from scripts import sync_mirror
+from scripts import ci_checks, sync_mirror
 from scripts.github_api import APIError, GitHub, SafeRedirect
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -115,22 +119,46 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('pull_request', workflow['on'])
         self.assertNotIn('pull_request_target', workflow['on'])
         self.assertEqual(workflow['permissions'], {'contents': 'read'})
-        self.assertEqual(set(workflow['jobs']), {'catalog', 'calendar-skill', 'transport-skills'})
+        self.assertEqual(set(workflow['jobs']), {'catalog', 'hosted-skills', 'checks'})
         catalog = workflow['jobs']['catalog']['steps']
         commands = '\n'.join(s.get('run', '') for s in catalog)
         self.assertLess(commands.index('scripts/ci_checks.py'), commands.index('scripts/build_index.py'))
-        for marker in ('scripts/build_index.py --check', 'unittest discover', 'skills/smart_lists/tests',
-                       'skills/gigasearch/test_gigasearch.py', 'skills/cache_efficiency_snapshot/test_cache_efficiency.py',
-                       'tests/test_widget_theme_contracts.py', 'owner_updates.py verdict'):
+        for marker in ('scripts/build_index.py --check', 'tests/test_catalog.py', 'tests/test_index.py',
+                       'tests/test_ci_checks.py', 'owner_updates.py verdict'):
             self.assertIn(marker, commands)
+        self.assertNotIn('unittest discover', commands)
+        self.assertNotIn('skills/', commands)
         self.assertTrue(any(s.get('uses') == 'actions/upload-artifact@v4' for s in catalog))
         artifact = next(s for s in catalog if s.get('uses') == 'actions/upload-artifact@v4')
         self.assertEqual(artifact['with']['overwrite'], 'true')  # Full reruns replace the prior attempt's verdict.
-        transport = [s['run'] for s in workflow['jobs']['transport-skills']['steps'] if 'run' in s and 'pytest -p' in s['run']]
-        self.assertEqual(transport, [
-            'PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider -q -rs skills/slack-bridge/tests',
-            'PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider -q -rs skills/telegram-bot/tests'])
+        hosted = workflow['jobs']['hosted-skills']
+        self.assertEqual(hosted['needs'], 'catalog')
+        self.assertEqual(hosted['if'], "needs.catalog.outputs.suites != '[]'")
+        self.assertEqual(hosted['strategy'], {'fail-fast': 'false', 'matrix': {
+            'suite': '${{ fromJSON(needs.catalog.outputs.suites) }}'}})
+        self.assertEqual(workflow['jobs']['catalog']['outputs'], {'suites': '${{ steps.prepare.outputs.suites }}'})
+        self.assertEqual(hosted['steps'][-1]['run'], 'python -B scripts/ci_checks.py run "$SUITE"')
+        self.assertIn('skills/slack-bridge/tests', ci_checks.SUITES['slack-bridge']['tests'])
+        self.assertIn('skills/telegram-bot/tests', ci_checks.SUITES['telegram-bot']['tests'])
+        for path in (ROOT / 'tests').glob('test_*.py'):
+            relative = path.relative_to(ROOT).as_posix()
+            self.assertTrue(relative in commands or any(relative in suite['tests'] + suite.get('shared', [])
+                                                        for suite in ci_checks.SUITES.values()), relative)
         self.assertNotIn('secrets.', commands)
+
+    def test_aggregate_runs_after_failures_and_accepts_only_success_or_skipped(self):
+        job = self.workflow('catalog-check.yml')['jobs']['checks']
+        self.assertEqual(set(job['needs']), {'catalog', 'hosted-skills'})
+        self.assertEqual(job['if'], '${{ always() }}')
+        step = job['steps'][0]
+        self.assertEqual(step['env'], {'NEEDS': '${{ toJSON(needs) }}'})
+        script = step['run'].split("python - <<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+        for results in itertools.product(('success', 'skipped', 'failure', 'cancelled'), repeat=2):
+            with self.subTest(results=results):
+                needs = {name: {'result': result} for name, result in zip(job['needs'], results)}
+                run = subprocess.run([sys.executable, '-B', '-c', script], timeout=30,
+                                     env={**os.environ, 'NEEDS': json.dumps(needs)}, capture_output=True)
+                self.assertEqual(run.returncode, 0 if all(r in {'success', 'skipped'} for r in results) else 1)
 
     def test_owner_write_job_uses_only_main_helpers_and_data_artifacts(self):
         workflow = self.workflow('owner-updates.yml')
