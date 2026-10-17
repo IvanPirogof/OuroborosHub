@@ -1,0 +1,18 @@
+{
+  "category": [
+    "search"
+  ],
+  "description": "Focused web search and source reading, with site/date filters and a searchable page reader.",
+  "digest": "sha256v2:c5f89cdf9a7ee02fa4b2d48b810ca0733e428c523d8da22cd15aba8d7a547d23",
+  "name": "keenable",
+  "owner": "razzant",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/keenable"
+  },
+  "type": "extension",
+  "version": "0.4.0",
+  "when_to_use": "Focused fact checks, finding primary sources, documentation lookup, reading a known URL, site/date-filtered retrieval, or supplying sources for Ouroboros's own research. Use live fetch for current pages and a focused extraction question for a section beyond the excerpt. Choose a broader research workflow when the task needs many searches and a synthesized report.",
+  "withdrawn": null
+}

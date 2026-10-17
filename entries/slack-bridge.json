@@ -1,0 +1,17 @@
+{
+  "category": [
+    "messaging"
+  ],
+  "description": "Bidirectional Slack presence transport for Ouroboros using Socket Mode, durable delivery queues, threaded replies, proactive text messages, and inbound file staging.",
+  "digest": "sha256v2:39ff0302ba79bb388d4ff5699cc80bf0f6c0437252e6bdf17bb479f9b2010306",
+  "name": "slack-bridge",
+  "owner": "ouroboros-agent",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/slack-bridge"
+  },
+  "type": "extension",
+  "version": "1.6.1",
+  "withdrawn": null
+}

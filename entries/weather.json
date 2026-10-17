@@ -1,0 +1,18 @@
+{
+  "category": [
+    "city"
+  ],
+  "description": "Wide polished weather widget — current conditions, compact forecast, astronomy, and resilient wttr.in cache (no API key).",
+  "digest": "sha256v2:f87c33f3383e51fedb4616f43f392e64753958fa956695d6d442807099cb1f4c",
+  "name": "weather",
+  "owner": "razzant",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/weather"
+  },
+  "type": "extension",
+  "version": "0.3.2",
+  "when_to_use": "User asks about weather, temperature, forecast, current conditions, wind, humidity, sunrise/sunset, or a weather dashboard for a city.",
+  "withdrawn": null
+}

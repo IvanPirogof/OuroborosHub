@@ -1,0 +1,19 @@
+{
+  "author": "kuznetsoffandrey",
+  "category": [
+    "health"
+  ],
+  "description": "Сбор данных со смарт-браслета WHOOP через официальный API v2: сон, recovery, strain, тренировки, HRV, пульс покоя, SpO2. Полный OAuth2 Authorization Code flow для первичной авторизации и автоматическое обновление токенов.",
+  "digest": "sha256v2:488baedc00cbfa33bfab77e80f942cce8592d5dd2488bc2d53743b2b41b00ca9",
+  "name": "whoop-health",
+  "owner": "kuznetsoffandrey",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/whoop-health"
+  },
+  "type": "extension",
+  "version": "0.3.1",
+  "when_to_use": "Пользователь спрашивает о данных с WHOOP: сон, восстановление, нагрузка (strain), тренировки, HRV, пульс, SpO2. Примеры: «покажи recovery с WHOOP», «как я спал по WHOOP?», «сводка здоровья WHOOP», «авторизуй WHOOP».",
+  "withdrawn": null
+}

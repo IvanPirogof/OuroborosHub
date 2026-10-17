@@ -1,0 +1,17 @@
+{
+  "category": [
+    "planning"
+  ],
+  "description": "Read-only observer for a YYLO-orchestrated coding workspace. Explains the typed task and merge lifecycle and how to answer status questions with the yylo CLI's read-only commands (info, task doctor, task status, merge status, wiki). Never mutates task, merge, Kanban, or Git state.",
+  "digest": "sha256v2:ba9f18c4da8183d6d050fb3b5f8dd0b6a6c86c67b93eb08c072e70c384426073",
+  "name": "yylo-tasks",
+  "owner": "InsightFactoryAPP",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/yylo-tasks"
+  },
+  "type": "instruction",
+  "version": "0.1.0",
+  "withdrawn": null
+}

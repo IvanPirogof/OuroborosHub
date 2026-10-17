@@ -1,0 +1,20 @@
+{
+  "category": [
+    "media"
+  ],
+  "description": "Generate 3D scenes from satellite imagery using Sat3DGen (ICLR 2026). Sends a satellite image to the HuggingFace Space API and returns a textured 3D mesh (.obj) plus an interactive Three.js viewer.",
+  "digest": "sha256v2:6f3abc7e46b0386d6a5b418eb850890f709d949ee29820d122fde86ce9f05817",
+  "install_specs": [
+    "gradio_client>=1.0"
+  ],
+  "name": "sat3dgen",
+  "owner": "kuznetsoffandrey",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/sat3dgen"
+  },
+  "type": "script",
+  "version": "1.0.0",
+  "withdrawn": null
+}

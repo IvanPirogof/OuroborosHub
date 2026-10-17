@@ -1,0 +1,18 @@
+{
+  "category": [
+    "writing"
+  ],
+  "description": "Evidence-informed writing prompt and checklist for substantive, calibrated prose that preserves voice and fits the reader, genre, and requested language.",
+  "digest": "sha256v2:e74490803601cce88c4eeff39578ce7d7fa687b9f494b3b775a316884e4fa196",
+  "name": "anti-slop",
+  "owner": "ouroboros-agent",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/anti-slop"
+  },
+  "type": "instruction",
+  "version": "0.1.0",
+  "when_to_use": "Drafting or revising human-facing prose, including scientific or technical writing, documentation, posts, slides, speeches, and correspondence; or when asked to audit writing for slop.",
+  "withdrawn": null
+}

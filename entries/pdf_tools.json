@@ -1,0 +1,28 @@
+{
+  "category": [
+    "documents"
+  ],
+  "description": "Read PDF documents page by page and build new PDF files from text or structured answers with Unicode-capable fonts.",
+  "digest": "sha256v2:c7287cc5aa92dd81a144640c263ed6e451ca2c02db2b934abb76cf332140d598",
+  "install_specs": [
+    {
+      "kind": "pip",
+      "package": "pypdf"
+    },
+    {
+      "kind": "pip",
+      "package": "reportlab"
+    }
+  ],
+  "name": "pdf_tools",
+  "owner": "kazzand",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/pdf_tools"
+  },
+  "type": "script",
+  "version": "0.1.0",
+  "when_to_use": "The user attached a PDF and asks to read, summarize, search, or compare it, or asks to produce or export a PDF.",
+  "withdrawn": null
+}

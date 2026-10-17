@@ -1,0 +1,17 @@
+{
+  "category": [
+    "documents"
+  ],
+  "description": "Read, search and author Confluence Cloud pages, comments and attachments using an existing personal or scoped API token.",
+  "digest": "sha256v2:a2c3c019223962274d68c8f181db2510d65d39836390bde7c4913ba6e88f3574",
+  "name": "confluence",
+  "owner": "razzant",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/confluence"
+  },
+  "type": "extension",
+  "version": "0.1.2",
+  "withdrawn": null
+}

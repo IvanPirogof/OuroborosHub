@@ -1,0 +1,17 @@
+{
+  "category": [
+    "health"
+  ],
+  "description": "Структурирует OCR-текст лабораторных анализов и объясняет отклонения; не заменяет врача или экстренную помощь.",
+  "digest": "sha256v2:2401ebc1fe0fcb51f050f0611c454be29a464708d862d77a1099dbc6518f7632",
+  "name": "medical-lab-analyzer",
+  "owner": "komsikov",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/medical-lab-analyzer"
+  },
+  "type": "extension",
+  "version": "0.2.2",
+  "withdrawn": null
+}
