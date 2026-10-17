@@ -251,7 +251,9 @@ def test_supervised_companion_loopback_auth_and_readiness(tmp_path):
         child.stderr.close()
 
 
-def test_real_plugin_route_forwards_raw_audio_over_private_loopback(tmp_path):
+@pytest.mark.parametrize("mime,audio", [(b"audio/webm", b"\x1a\x45\xdf\xa3fake-webm-audio"),
+                                      (b"audio/mp4", b"\x00\x00\x00\x18ftypM4A fake-mp4")])
+def test_real_plugin_route_forwards_raw_audio_over_private_loopback(tmp_path, mime, audio):
     from starlette.requests import Request
 
     plugin = load_plugin()
@@ -275,11 +277,10 @@ def test_real_plugin_route_forwards_raw_audio_over_private_loopback(tmp_path):
         (tmp_path / 'voice_endpoint.json').write_text(json.dumps({
             'port': server.server_port, 'token': 'x' * 32, 'pid': os.getpid(),
         }), encoding='utf-8')
-        audio = b'\x1a\x45\xdf\xa3fake-webm-audio'
         async def receive():
             return {'type': 'http.request', 'body': audio, 'more_body': False}
         request_obj = Request({'type': 'http', 'method': 'POST', 'path': '/transcribe',
-                               'headers': [(b'content-type', b'audio/webm'),
+                               'headers': [(b'content-type', mime),
                                            (b'content-length', str(len(audio)).encode())]}, receive)
         _status, transcribe, _settings, _install = plugin._routes(tmp_path)
         response = asyncio.run(transcribe(request_obj))
@@ -300,3 +301,44 @@ def test_download_failure_is_visible_even_when_model_is_still_missing():
     }))
     visible = json.loads(response.body)
     assert visible["voice"] == {"state": "unavailable", "message": "network download failed"}
+
+
+@pytest.mark.parametrize("mime", ["audio/mp4", 'audio/mp4;codecs="mp4a.40.2"'])
+def test_mp4_signature_matches_only_at_offset_four(mime):
+    audio_format(mime, b"\x00\x00\x00\x18ftypM4A ")
+    for invalid in (b"ftypM4A ", b"\x00\x00\x00ftypM4A ", b"OggSnot-mp4", b"123"):
+        with pytest.raises(ValueError, match="signature"):
+            audio_format(mime, invalid)
+
+
+def test_mp4_decodes_through_pyav_before_local_transcription(tmp_path, monkeypatch):
+    import io
+    import av
+    import numpy as np
+
+    monkeypatch.setenv("OUROBOROS_SKILL_STATE_DIR", str(tmp_path))
+    spec = importlib.util.spec_from_file_location("voice_mp4_test", ROOT / "scripts" / "companion.py")
+    companion = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(companion)
+    write_settings(tmp_path, validate_choice(str(make_model(tmp_path)), False))
+    output = io.BytesIO()
+    with av.open(output, "w", format="mp4") as container:
+        stream = container.add_stream("aac", rate=16000)
+        frame = av.AudioFrame.from_ndarray(np.zeros((1, 4096), dtype=np.float32), format="fltp", layout="mono")
+        frame.sample_rate = 16000
+        for packet in stream.encode(frame):
+            container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
+
+    class Model:
+        def __init__(self, path, **kwargs):
+            assert path == str(tmp_path / "local-model")
+            assert kwargs["local_files_only"] is True
+
+        def transcribe(self, audio, **kwargs):
+            assert audio.dtype == np.float32 and 1600 <= len(audio) < 16000
+            return [types.SimpleNamespace(text=" Safari dictation ")], None
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=Model))
+    assert companion.Engine().transcribe(output.getvalue(), "audio/mp4") == "Safari dictation"

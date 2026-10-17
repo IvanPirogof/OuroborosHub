@@ -2158,43 +2158,43 @@
       "files": [
         {
           "path": "ATTRIBUTION.md",
-          "size": 1780,
-          "sha256": "e314044567ba17e389a133fbdea5e1908bbb62bec55f604937d0991d38df9191"
+          "sha256": "e314044567ba17e389a133fbdea5e1908bbb62bec55f604937d0991d38df9191",
+          "size": 1780
         },
         {
           "path": "SKILL.md",
-          "size": 15587,
-          "sha256": "680203b39db48c35dd590c345847432367b2c2246eb73b82661d4d4efd4c5c9a"
+          "sha256": "680203b39db48c35dd590c345847432367b2c2246eb73b82661d4d4efd4c5c9a",
+          "size": 15587
         },
         {
           "path": "host.py",
-          "size": 3111,
-          "sha256": "f1b579b78e7c20baf4ff4b2f41c2715e36498d94b7653cd2ce94db8598dd487e"
+          "sha256": "f1b579b78e7c20baf4ff4b2f41c2715e36498d94b7653cd2ce94db8598dd487e",
+          "size": 3111
         },
         {
           "path": "lease.py",
-          "size": 8763,
-          "sha256": "adf7457c6fdfee423e2bce412a7803119836f06e5bbd962211096e4806ad03a9"
+          "sha256": "adf7457c6fdfee423e2bce412a7803119836f06e5bbd962211096e4806ad03a9",
+          "size": 8763
         },
         {
           "path": "mailer.py",
-          "size": 15199,
-          "sha256": "0fa5c0c7e39d8d7944539646141db4b6b2d026788caeebf4c37db746e1cafdbd"
+          "sha256": "0fa5c0c7e39d8d7944539646141db4b6b2d026788caeebf4c37db746e1cafdbd",
+          "size": 15199
         },
         {
           "path": "plugin.py",
-          "size": 48776,
-          "sha256": "31267b458f6cd65b0f9b5df0a6ba6e3216c3c7f3e7af565c85770afe829b3318"
+          "sha256": "31267b458f6cd65b0f9b5df0a6ba6e3216c3c7f3e7af565c85770afe829b3318",
+          "size": 48776
         },
         {
           "path": "store.py",
-          "size": 104700,
-          "sha256": "c7614718acba03a6285a285efe9a30e4528afcffa3cd76b864ca04bf7b379908"
+          "sha256": "c7614718acba03a6285a285efe9a30e4528afcffa3cd76b864ca04bf7b379908",
+          "size": 104700
         },
         {
           "path": "widget.js",
-          "size": 20719,
-          "sha256": "1109872bccdcd5064442a3880cbaf8d77fbb052a09b6e2f940d1dc8f2ce02ce7"
+          "sha256": "1109872bccdcd5064442a3880cbaf8d77fbb052a09b6e2f940d1dc8f2ce02ce7",
+          "size": 20719
         }
       ]
     },
@@ -2203,8 +2203,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "f45fa03480c9432f40a96fe2fd87da786f91b14dbf32d8303e80a0075cafa1f9",
-          "size": 4900
+          "sha256": "0b4195e92d5e5249c1829c781e0ce00f6bc528e29c1411d8fb7b9e5b731cc093",
+          "size": 4958
         },
         {
           "path": "plugin.py",
@@ -2213,24 +2213,24 @@
         },
         {
           "path": "scripts/companion.py",
-          "sha256": "728a4bdb8c75f6a9a226d67e12446719c06450d3a61e4078cb0ad23efa051fe8",
-          "size": 12198
+          "sha256": "671bb1e5efaf0d6850b179663044420eb1a1f76d616f0b60854419daa4a9bed7",
+          "size": 12273
         },
         {
           "path": "tests/test_voice.py",
-          "sha256": "940f7b9d0c2b3918d75d3731d51fa7b89d333397d659440d0fb27eadb0df263c",
-          "size": 13214
+          "sha256": "9020ec28fc9dce6da88e49a1ffc8aa74280a334a26be5442b473d79e9c86fd18",
+          "size": 15217
         },
         {
           "path": "whisper_runtime.py",
-          "sha256": "eabc7cc34476ab5744a26759c6bf8bdce6544941bb51a22584ec0a339257e9e3",
-          "size": 5322
+          "sha256": "d55ee18ffe57174fd3d9eacf237f88ac489ec4f86bde9a7397f840475629bb57",
+          "size": 5402
         }
       ],
       "name": "whisper-voice",
       "slug": "whisper-voice",
       "type": "extension",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "when_to_use": "The owner explicitly enables optional local voice input in the composer."
     }
   ]

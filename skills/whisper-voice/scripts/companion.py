@@ -124,6 +124,7 @@ class Engine:
 
         parts = []
         count = 0
+        # PyAV detects WebM/Ogg/MP3 and Safari MP4/AAC from the container.
         with av.open(io.BytesIO(data), mode="r") as container:
             streams = container.streams.audio
             if not streams:

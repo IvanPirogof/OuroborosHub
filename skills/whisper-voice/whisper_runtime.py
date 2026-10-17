@@ -108,12 +108,13 @@ def model_directory(path: str) -> Path:
 
 def audio_format(mime: str, data: bytes) -> None:
     mime = mime.split(";", 1)[0].strip().lower()
-    if mime not in ("audio/webm", "audio/ogg", "audio/mpeg"):
-        raise ValueError("unsupported audio type; use WebM, Ogg or MP3")
+    if mime not in ("audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg"):
+        raise ValueError("unsupported audio type; use WebM, Ogg, MP4 or MP3")
     if not data or len(data) > MAX_AUDIO_BYTES:
         raise ValueError("audio must contain 1..393216 bytes")
     valid = (data.startswith(b"\x1a\x45\xdf\xa3") if mime == "audio/webm" else
              data.startswith(b"OggS") if mime == "audio/ogg" else
+             data[4:8] == b"ftyp" if mime == "audio/mp4" else
              data.startswith(b"ID3") or (len(data) >= 2 and data[0] == 0xff and data[1] & 0xe0 == 0xe0))
     if not valid:
         raise ValueError("audio container signature does not match Content-Type")
