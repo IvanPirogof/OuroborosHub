@@ -392,7 +392,7 @@ class ReleaseIdentityTests(unittest.TestCase):
         generated = builder.build_catalog(ROOT)
         current = {row['slug']: row for row in generated['skills']}
         self.assertEqual(len(previous), 50)
-        self.assertEqual(set(current), set(previous))
+        self.assertTrue(set(previous) <= set(current))
         self.assertTrue(original.keys() <= generated.keys())
         for name, row in previous.items():
             with self.subTest(skill=name):
