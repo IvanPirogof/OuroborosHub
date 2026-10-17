@@ -166,13 +166,26 @@ keeps old catalogs usable while new metadata is being published. Uncommitted
 local previews or exported trees without git history use `main`; publication
 always uses a clean checkout with full history.
 
-After a main push or an owner automerge, **Sync Joi Lab Mirror** validates and
-regenerates the v1 catalog, publishes any generated commit to main, then explicitly
-mirrors the same commit to `joi-lab/OuroborosHub`. It does not depend on a
-`GITHUB_TOKEN` push starting another workflow. Publication uses `GITHUB_TOKEN` for
-the canonical repo and the existing `JOILAB_HUB_MIRROR_PAT` for the mirror. It never
-force-pushes. Repository protection must permit this narrowly scoped publication;
-the workflow does not change protection settings.
+After a main push or an owner automerge, **Sync Joi Lab Mirror** refreshes legacy
+hosted entries, validates and regenerates the v1 catalog, publishes the generated
+commit to main, then mirrors it to `joi-lab/OuroborosHub`. It does not depend on a
+`GITHUB_TOKEN` push starting another workflow. When `CATALOG_DEPLOY_KEY` is set,
+canonical publication uses SSH with that write-enabled repository deploy key;
+otherwise it uses `GITHUB_TOKEN`. The key exists only in a mode-600 file under
+the runner's temporary directory during the push. GitHub's published Ed25519 host
+key is pinned in `known_hosts`; no live key scan is trusted. Mirroring uses the
+existing `JOILAB_HUB_MIRROR_PAT`. Neither push is forced.
+
+Before protecting main, configure `CATALOG_DEPLOY_KEY` and list **Deploy keys** as
+a bypass actor in the main ruleset so this generated publication can land.
+Use that key only for catalog publication; nothing else bypasses the required PR
+and green `checks` job. `GITHUB_TOKEN` cannot bypass a ruleset. The workflow does
+not change repository settings. A deploy-key push can trigger another sync run;
+unchanged generated files produce no further commit. If the catalog push is
+refused, the workflow still mirrors the original checked-out main commit and
+reports failure; it leaves the unpublished generated commit out of the mirror so
+a later retry can fast-forward. Old clients receive the refreshed catalog after
+canonical publication succeeds.
 
 Older publishers can still submit payload and whole-catalog PRs. Before validation,
 CI refreshes the changed hosted skill's version, declaration and digest when its

@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import itertools
 import json
 import os
 from pathlib import Path
+import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -43,10 +46,10 @@ class MirrorTests(unittest.TestCase):
                 self.assertEqual([args[0] for args, _token in calls], ['branch', 'push'])
                 self.assertEqual(calls[-1][1], 'mirror-synthetic')
 
-    def test_publication_failures_do_not_mirror_unpublished_output(self):
+    def test_wrong_branch_or_invalid_catalog_never_reaches_a_push(self):
         with tempfile.TemporaryDirectory(prefix='hub-mirror-') as tmp:
             root = Path(tmp)
-            for branch, failure in [('feature', None), ('main', 'validation'), ('main', 'push')]:
+            for branch, failure in [('feature', None), ('main', 'validation')]:
                 (root / 'catalog.json').write_text('old', encoding='utf-8')
                 calls = []
                 def git(_root, args, token=None):
@@ -63,6 +66,75 @@ class MirrorTests(unittest.TestCase):
                 self.assertFalse(any('https://github.com/joi-lab/OuroborosHub.git' in args for args in calls))
             with self.assertRaises(ValueError):
                 sync_mirror.sync(root, '', 'mirror-synthetic')
+
+    def test_ssh_deploy_key_or_https_token_publish_then_mirror_with_separate_credentials(self):
+        for deploy_key in ('synthetic-private-key', None):
+            with self.subTest(deploy_key=bool(deploy_key)), tempfile.TemporaryDirectory(prefix='hub-ssh test-') as tmp:
+                root, calls, key_paths = Path(tmp), [], []
+                (root / 'catalog.json').write_text('old', encoding='utf-8')
+                def transport(args, directory, *, env):
+                    self.assertEqual(directory, root)
+                    calls.append((args, env))
+                    if args[0] == 'push' and args[1].startswith('git@'):
+                        command = shlex.split(env['GIT_SSH_COMMAND'])
+                        key = Path(command[command.index('-i') + 1])
+                        hosts = Path(next(part.split('=', 1)[1] for part in command if part.startswith('UserKnownHostsFile=')))
+                        self.assertTrue(key.is_relative_to(root))
+                        self.assertEqual(stat.S_IMODE(key.stat().st_mode), 0o600)
+                        self.assertEqual(key.read_text(encoding='utf-8'), deploy_key + '\n')
+                        self.assertEqual(hosts.read_text(encoding='utf-8'), sync_mirror.GITHUB_HOST_KEY)
+                        self.assertTrue({'BatchMode=yes', 'IdentitiesOnly=yes', 'StrictHostKeyChecking=yes',
+                                         'GlobalKnownHostsFile=/dev/null'} <= set(command))
+                        self.assertNotIn('GIT_CONFIG_VALUE_0', env)
+                        self.assertNotIn(deploy_key, str(args) + env['GIT_SSH_COMMAND'])
+                        key_paths.extend([key, hosts])
+                    return 'main' if args == ['branch', '--show-current'] else ''
+                with patch.dict(os.environ, {'RUNNER_TEMP': tmp}), \
+                        patch.object(sync_mirror, 'run_git', side_effect=transport), \
+                        patch.object(sync_mirror, 'build_catalog', return_value={'skills': []}):
+                    # A deploy key works even without GITHUB_TOKEN.
+                    sync_mirror.sync(root, None if deploy_key else 'repo-synthetic', 'mirror-synthetic', deploy_key)
+                pushes = [(args, env) for args, env in calls if args[0] == 'push']
+                self.assertEqual(len(pushes), 2)
+                expected_url = 'git@github.com:razzant/OuroborosHub.git' if deploy_key else 'https://github.com/razzant/OuroborosHub.git'
+                self.assertEqual(pushes[0][0], ['push', expected_url, 'HEAD:refs/heads/main'])
+                if not deploy_key:
+                    self.assertNotIn('GIT_SSH_COMMAND', pushes[0][1])
+                    self.assertEqual(base64.b64decode(pushes[0][1]['GIT_CONFIG_VALUE_0'].split()[-1]),
+                                     b'x-access-token:repo-synthetic')
+                self.assertEqual(pushes[1][0], ['push', 'https://github.com/joi-lab/OuroborosHub.git', 'HEAD:refs/heads/main'])
+                self.assertNotIn('GIT_SSH_COMMAND', pushes[1][1])
+                self.assertEqual(base64.b64decode(pushes[1][1]['GIT_CONFIG_VALUE_0'].split()[-1]),
+                                 b'x-access-token:mirror-synthetic')
+                self.assertTrue(all(not path.exists() for path in key_paths))
+
+    def test_refused_catalog_push_still_mirrors_main_and_reports_failure(self):
+        for deploy_key in ('synthetic-private-key', None):
+            with self.subTest(deploy_key=bool(deploy_key)), tempfile.TemporaryDirectory(prefix='hub-refusal-') as tmp:
+                root, pushes, keys = Path(tmp), [], []
+                def transport(args, directory, *, env):
+                    if args[0] == 'push':
+                        pushes.append(args)
+                        if 'razzant/OuroborosHub.git' in args[1]:
+                            if deploy_key:
+                                command = shlex.split(env['GIT_SSH_COMMAND'])
+                                keys.append(Path(command[command.index('-i') + 1]))
+                            raise ValueError('synthetic ruleset refusal')
+                    return 'main' if args == ['branch', '--show-current'] else ''
+                with patch.dict(os.environ, {'RUNNER_TEMP': tmp}), \
+                        patch.object(sync_mirror, 'run_git', side_effect=transport), \
+                        patch.object(sync_mirror, 'build_catalog', return_value={'skills': []}), \
+                        self.assertRaisesRegex(ValueError, 'mirrored main'):
+                    sync_mirror.sync(root, 'repo-synthetic', 'mirror-synthetic', deploy_key)
+                self.assertEqual(len(pushes), 2)
+                self.assertEqual(pushes[-1], ['push', 'https://github.com/joi-lab/OuroborosHub.git', 'HEAD^:refs/heads/main'])
+                self.assertTrue(all(not path.exists() for path in keys))
+
+    def test_pinned_ed25519_key_matches_github_published_fingerprint(self):
+        host, kind, encoded = sync_mirror.GITHUB_HOST_KEY.split()
+        self.assertEqual((host, kind), ('github.com', 'ssh-ed25519'))
+        fingerprint = base64.b64encode(hashlib.sha256(base64.b64decode(encoded)).digest()).decode().rstrip('=')
+        self.assertEqual(fingerprint, '+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU')
 
     def test_git_auth_is_in_child_environment_only(self):
         with patch.object(sync_mirror, 'run_git', return_value='done') as run:
@@ -184,3 +256,4 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(mirror['on']['push']['branches'], ['main'])
         self.assertEqual(mirror['jobs']['sync']['steps'][0]['with']['ref'], 'main')
         self.assertEqual(mirror['jobs']['sync']['steps'][-1]['run'], 'python -B scripts/sync_mirror.py')
+        self.assertEqual(mirror['jobs']['sync']['steps'][-1]['env']['CATALOG_DEPLOY_KEY'], '${{ secrets.CATALOG_DEPLOY_KEY }}')

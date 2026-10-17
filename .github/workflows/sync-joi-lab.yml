@@ -36,5 +36,6 @@ jobs:
       - name: Generate the v1 catalog, publish it, then mirror the exact commit
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CATALOG_DEPLOY_KEY: ${{ secrets.CATALOG_DEPLOY_KEY }}
           MIRROR_PAT: ${{ secrets.JOILAB_HUB_MIRROR_PAT }}
         run: python -B scripts/sync_mirror.py
