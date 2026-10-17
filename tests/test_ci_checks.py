@@ -16,9 +16,15 @@ class SelectionTests(unittest.TestCase):
     def test_metadata_prs_skip_hosted_suites_and_payload_prs_select_their_consumers(self):
         self.assertEqual(ci.selected_suites(set()), [])
         self.assertEqual(ci.selected_suites({'README.md', 'entries/calendar.json', 'official.json', 'catalog.json'}), [])
-        for skill in {skill for suite in ci.SUITES.values() for skill in suite['skills']}:
+        consumers = {
+            'smart_lists': {'smart-lists', 'widgets'}, 'gigasearch': {'gigasearch'},
+            'cache_efficiency_snapshot': {'cache-efficiency', 'widgets'}, 'calendar': {'calendar-skill', 'widgets'},
+            'slack-bridge': {'slack-bridge'}, 'telegram-bot': {'telegram-bot'}, 'keenable': {'keenable'},
+            '2gis': {'2gis'}, 'whoop-health': {'whoop-health'}, 'claudexor_quotas': {'widgets'},
+            'context-lens': {'widgets'}, 'memory-atlas': {'widgets'}, 'token-usage': {'widgets'},
+        }
+        for skill, expected in consumers.items():
             with self.subTest(skill=skill):
-                expected = {name for name, suite in ci.SUITES.items() if skill in suite['skills']}
                 self.assertEqual(set(ci.selected_suites({f'skills/{skill}/plugin.py'})), expected)
                 self.assertEqual(ci.selected_suites({f'skills/{skill}-unrelated/plugin.py'}), [])
 
@@ -30,7 +36,8 @@ class SelectionTests(unittest.TestCase):
                     self.assertIn(name, ci.selected_suites({path}))
         self.assertEqual(ci.selected_suites({'tests/fixtures/keenable/new.json'}), ['keenable'])
         self.assertEqual(ci.selected_suites({'tests/fixtures/dashboard_theme_responses.json'}), ['widgets'])
-        for path in ci.SHARED:
+        for path in ('.github/workflows/catalog-check.yml', 'scripts/ci_checks.py', 'scripts/build_index.py',
+                     'scripts/release_digest.py', 'tests/test_ci_checks.py', 'tests/conftest.py'):
             with self.subTest(shared=path):
                 self.assertEqual(set(ci.selected_suites({path})), set(ci.SUITES))
 

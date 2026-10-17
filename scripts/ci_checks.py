@@ -36,6 +36,7 @@ SUITES = {
     'whoop-health': {'skills': ['whoop-health'], 'tests': ['tests/test_whoop_recovery.py']},
 }
 SHARED = {'.github/workflows/catalog-check.yml', 'scripts/ci_checks.py', 'tests/test_ci_checks.py',
+          'scripts/build_index.py', 'scripts/release_digest.py',
           'conftest.py', 'tests/conftest.py', 'pytest.ini', 'pyproject.toml'}
 
 
