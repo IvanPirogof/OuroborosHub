@@ -118,6 +118,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(set(workflow['jobs']), {'catalog', 'calendar-skill', 'transport-skills'})
         catalog = workflow['jobs']['catalog']['steps']
         commands = '\n'.join(s.get('run', '') for s in catalog)
+        self.assertLess(commands.index('scripts/ci_checks.py'), commands.index('scripts/build_index.py'))
         for marker in ('scripts/build_index.py --check', 'unittest discover', 'skills/smart_lists/tests',
                        'skills/gigasearch/test_gigasearch.py', 'skills/cache_efficiency_snapshot/test_cache_efficiency.py',
                        'tests/test_widget_theme_contracts.py', 'owner_updates.py verdict'):

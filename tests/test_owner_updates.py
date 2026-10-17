@@ -113,6 +113,7 @@ class OwnerUpdateTests(unittest.TestCase):
             ('new entry', lambda a: a.files[0].update(status='added')),
             ('entry removed', lambda a: a.files[0].update(status='removed')),
             ('no entry', lambda a: a.files.pop(0)),
+            ('legacy publisher', lambda a: a.files[0].update(filename='catalog.json')),
             ('second entry', lambda a: a.files.append({'filename': 'entries/other.json', 'status': 'modified'})),
             ('catalog', lambda a: a.files.append({'filename': 'catalog.json', 'status': 'modified'})),
             ('official file', lambda a: a.files.append({'filename': 'official.json', 'status': 'modified'})),

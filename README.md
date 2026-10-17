@@ -173,9 +173,12 @@ the canonical repo and the existing `JOILAB_HUB_MIRROR_PAT` for the mirror. It n
 force-pushes. Repository protection must permit this narrowly scoped publication;
 the workflow does not change protection settings.
 
-Older publishers that submit whole-catalog PRs still have an integration path:
-the maintainer copies their metadata into per-skill entries, refreshes the release
-fields and regenerates the catalog before merging. Those PRs use maintainer review.
+Older publishers can still submit payload and whole-catalog PRs. Before validation,
+CI refreshes the changed hosted skill's version, declaration and digest when its
+entry was not edited. Publication repeats that refresh on main and commits the
+refreshed entries together with the regenerated catalog. These PRs require a
+maintainer merge. Official endorsements are never refreshed automatically: an
+Official payload change still fails until the maintainer renews its endorsement.
 
 ## Community signals
 

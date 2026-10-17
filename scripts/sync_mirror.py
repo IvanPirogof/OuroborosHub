@@ -9,7 +9,7 @@ import sys
 
 if __package__ in {None, ''}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.build_index import build_catalog, json_bytes, run_git
+from scripts.build_index import build_catalog, json_bytes, refresh_legacy_entries, run_git
 
 AUTHOR = ['-c', 'user.name=Ouroboros', '-c', 'user.email=311266734+ouroboros-agent@users.noreply.github.com']
 
@@ -29,12 +29,13 @@ def sync(root, repo_token, mirror_token):
         raise ValueError('GITHUB_TOKEN and JOILAB_HUB_MIRROR_PAT must be configured')
     if git(root, ['branch', '--show-current']) != 'main':
         raise ValueError('catalog publication must run on the main branch')
+    refreshed = refresh_legacy_entries(root)
     catalog = root / 'catalog.json'
     generated = json_bytes(build_catalog(root))
-    if not catalog.is_file() or catalog.read_bytes() != generated:
+    if refreshed or not catalog.is_file() or catalog.read_bytes() != generated:
         catalog.write_bytes(generated)
-        git(root, ['add', '--', 'catalog.json'])
-        git(root, [*AUTHOR, 'commit', '-m', 'Regenerate the legacy skill catalog'])
+        git(root, ['add', '--', 'catalog.json', *refreshed])
+        git(root, [*AUTHOR, 'commit', '-m', 'Refresh hosted releases and the legacy skill catalog'])
         git(root, ['push', 'https://github.com/razzant/OuroborosHub.git', 'HEAD:refs/heads/main'], repo_token)
     # GITHUB_TOKEN pushes do not trigger another push workflow. This is deliberately
     # in the same job, including when Owner Updates merged using GITHUB_TOKEN.

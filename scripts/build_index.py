@@ -329,6 +329,36 @@ def refresh_entry(root, entry):
     return entry
 
 
+def refresh_legacy_entries(root, changed_paths=None):
+    """Normalize old publishers' hosted releases without renewing endorsements.
+
+    PRs must change the catalog and payload while leaving that entry untouched.
+    Publication scans main's hosted entries, including legacy merges queued before
+    the current checkout. Canonical PR entries still undergo ordinary validation.
+    """
+    if changed_paths is not None:
+        changed_paths = set(changed_paths)
+        if 'catalog.json' not in changed_paths:
+            return []
+        names = {p.split('/')[1] for p in changed_paths if p.startswith('skills/') and len(p.split('/')) > 2}
+    else:
+        names = {p.stem for p in (root / 'entries').glob('*.json')}
+    refreshed = []
+    for name in sorted(names):
+        relative = f'entries/{name}.json'
+        path = root / relative
+        if not path.is_file() or (changed_paths is not None and relative in changed_paths):
+            continue
+        entry = read_json(path)
+        if entry['source']['kind'] != 'hosted':
+            continue
+        updated = refresh_entry(root, dict(entry))
+        if updated != entry:
+            path.write_bytes(json_bytes(updated))
+            refreshed.append(relative)
+    return refreshed
+
+
 def catalog_row(directory, entry=None):
     front = read_manifest(directory)
     row = {'slug': directory.name, 'name': directory.name, 'description': front.get('description', ''),

@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from scripts import build_catalog as wrapper
 from scripts import build_index as builder
+from scripts import ci_checks, sync_mirror
 from scripts.release_digest import (DIGEST_DOMAIN, PER_INSTALL_NOTE_FILENAMES, declaration_json,
                                     manifest_declaration, payload_digest, payload_files, release_declaration)
 
@@ -243,6 +244,91 @@ class IndexTests(unittest.TestCase):
         builder.main(['--refresh', 'demo'], root=self.root)
         self.assertNotIn('install_specs', builder.read_json(self.root / 'entries/demo.json'))
         builder.build_catalog(self.root)
+
+    def legacy_change(self):
+        manifest = self.root / 'skills/demo/SKILL.md'
+        manifest.write_text('---\nversion: v2\ndependencies:\n  manual: ["Install café"]\n---\nBody', encoding='utf-8')
+        self.write('catalog.json', {'schema_version': 1, 'skills': [builder.catalog_row(manifest.parent)]})
+        return {'catalog.json', 'skills/demo/SKILL.md'}
+
+    def git(self, *args):
+        return builder.run_git(['-c', 'user.name=Test', '-c', 'user.email=test@example.test', *args], self.root)
+
+    def test_legacy_pr_refreshes_unchanged_entry_before_validation(self):
+        builder.main([], root=self.root)
+        self.git('init', '-q', '-b', 'main')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'initial')
+        base = self.git('rev-parse', 'HEAD')
+        paths = self.legacy_change()
+        self.git('commit', '-qam', 'legacy publisher')
+        event = {'pull_request': {'base': {'sha': base}, 'head': {'sha': self.git('rev-parse', 'HEAD')}}}
+        self.assertEqual(ci_checks.changed_paths(self.root, event), paths)
+        with self.assertRaisesRegex(ValueError, 'raw manifest declaration'):
+            builder.build_catalog(self.root)
+        ci_checks.prepare(self.root, 'pull_request', event)
+        refreshed = builder.read_json(self.root / 'entries/demo.json')
+        self.assertEqual(refreshed['version'], 'v2')
+        self.assertEqual(refreshed['install_specs'], {'manual': ['Install café']})
+        self.assertEqual(refreshed['digest'], payload_digest(self.root / 'skills/demo'))
+        self.assertEqual(refreshed['description'], self.entry['description'])
+        self.assertEqual(builder.main([], root=self.root), 0)
+        self.assertEqual(builder.main(['--check'], root=self.root), 0)
+
+    def test_legacy_refresh_does_not_repair_canonical_prs_or_git_pointers(self):
+        paths = self.legacy_change()
+        before = (self.root / 'entries/demo.json').read_bytes()
+        for changes in (paths | {'entries/demo.json'}, paths - {'catalog.json'}, {'catalog.json'}, set()):
+            with self.subTest(paths=changes):
+                self.assertEqual(builder.refresh_legacy_entries(self.root, changes), [])
+                self.assertEqual((self.root / 'entries/demo.json').read_bytes(), before)
+                with self.assertRaises(ValueError):
+                    builder.build_catalog(self.root)
+        self.entry['source'] = {'kind': 'git', 'repo': 'https://github.com/author/repo', 'path': '', 'commit': 'a' * 40}
+        self.write('entries/demo.json', self.entry)
+        with patch.object(builder, 'source_directory') as source:
+            self.assertEqual(builder.refresh_legacy_entries(self.root, paths), [])
+            self.assertEqual(builder.refresh_legacy_entries(self.root), [])
+        source.assert_not_called()
+
+    def test_legacy_official_change_still_requires_exact_reendorsement(self):
+        self.write('official.json', {'schema_version': 1, 'maintainer': 'razzant',
+                                    'endorsements': [{'name': 'demo', 'digest': self.entry['digest']}]})
+        before = (self.root / 'official.json').read_bytes()
+        paths = self.legacy_change()
+        self.assertEqual(builder.refresh_legacy_entries(self.root, paths), ['entries/demo.json'])
+        self.assertEqual((self.root / 'official.json').read_bytes(), before)
+        with self.assertRaisesRegex(ValueError, 'mismatched endorsed release'):
+            builder.build_catalog(self.root)
+        refreshed = builder.read_json(self.root / 'entries/demo.json')
+        self.write('official.json', {'schema_version': 1, 'maintainer': 'razzant',
+                                    'endorsements': [{'name': 'demo', 'digest': refreshed['digest']}]})
+        builder.build_catalog(self.root)
+
+    def test_post_merge_publication_commits_refreshed_entry_and_catalog_together(self):
+        builder.main([], root=self.root)
+        self.git('init', '-q', '-b', 'main')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'initial')
+        self.legacy_change()
+        self.git('commit', '-qam', 'merge legacy publisher')
+        pushes = []
+        def transport(root, args, token=None):
+            if args[0] == 'push':
+                pushes.append((args, token))
+                return ''
+            return builder.run_git(args, root)
+        with patch.object(sync_mirror, 'git', side_effect=transport):
+            sync_mirror.sync(self.root, 'synthetic-repo', 'synthetic-mirror')
+            published = self.git('rev-parse', 'HEAD')
+            self.assertEqual(self.git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD').splitlines(),
+                             ['catalog.json', 'entries/demo.json'])
+            self.assertEqual(builder.read_json(self.root / 'entries/demo.json')['version'], 'v2')
+            self.assertEqual(builder.main(['--check'], root=self.root), 0)
+            self.assertEqual(self.git('status', '--porcelain'), '')
+            sync_mirror.sync(self.root, 'synthetic-repo', 'synthetic-mirror')
+            self.assertEqual(self.git('rev-parse', 'HEAD'), published)
+        self.assertEqual([token for _args, token in pushes], ['synthetic-repo', 'synthetic-mirror', 'synthetic-mirror'])
 
     def test_legacy_pin_tracks_committed_payload_and_survives_generated_commits(self):
         def git(*args):
