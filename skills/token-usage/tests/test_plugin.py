@@ -57,7 +57,7 @@ spec.loader.exec_module(module)
 
 class OwnedTemporaryCase(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix=".test-plugin-", dir=ROOT)
+        self.temporary = tempfile.TemporaryDirectory(prefix="test-plugin-")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
@@ -167,7 +167,7 @@ class FakeAPI:
     def register_route(self, path, handler, *, methods=("GET",)):
         if path in self.routes:
             raise AssertionError("Host disallows duplicate route paths")
-        if path not in ("data", "export", "preferences"):
+        if path not in ("data", "export", "preferences", "chip"):
             raise AssertionError("Only own relative routes are allowed")
         expected = ["GET", "PUT"] if path == "preferences" else ["GET"]
         if methods != expected:

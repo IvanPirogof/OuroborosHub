@@ -1,7 +1,7 @@
 ---
 name: claudexor_quotas
 description: "Claudexor quota widget and read-only quota_summary tool: one bar per account and limit (current, dated last-known, or unknown — never zero), reserve in account-windows with coverage, restrictions and reported resets, and under the chosen limit a timeline — its recorded past and one conditional future (no new use, or the recent pace) of the accounts read now, with its reset schedule — from a bounded local history of passive readings."
-version: 0.9.0
+version: 0.10.0
 type: extension
 runtime: python3
 entry: plugin.py
@@ -13,6 +13,12 @@ model_experience:
   what_model_sees: "One tool, quota_summary, with a fixed schema. Only when called does compact JSON (account-windows per family and limit, current and dated last-known apart, coverage, restrictions, resets, pace, and a one-line headline per limit) arrive as a tool result; nothing is auto-inserted."
   token_effect: "Fixed schema and description while enabled; each voluntary call adds about 1-8 KB of JSON, less per family. No automatic call or cache benefit is promised."
 timeout_sec: 180
+contributes:
+  - id: quota
+    placement: composer.chips
+    label: Quotas
+    source: {route: chip, refresh_s: 60}
+    action: {verb: open.tab}
 ui_tab:
   tab_id: quotas
   title: Claudexor Quotas
@@ -25,7 +31,17 @@ ui_tab:
     start: auto
 ---
 
-# Claudexor Quotas (v0.9.0)
+# Claudexor Quotas (v0.10.0)
+
+The composer quota chip opens this widget. `GET chip` uses the same passive
+cached read as `quotas?reuse=1&chart=0`; it never requests provider refresh.
+`quota_chip.py` formats the summary's tightest measured limit per family:
+average remaining share across measured accounts, never a sum across limits.
+Its text is at most 24 characters, prioritizing the lowest remaining families;
+the title lists every family and its reported next reset (or unknown).
+Color thresholds are display formatting only: <=10% bad, <=25% warn, otherwise
+ok. Unavailable readings show a muted “—” with the reason; unknown is not zero.
+
 
 A projection of the host's own account surface, plus a small planner on top of
 it: how much measured quota is left per agent family and limit, when it is
