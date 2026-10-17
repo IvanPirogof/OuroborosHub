@@ -32,6 +32,8 @@ ANSWER = "The status report is complete: all three checks passed."
 NEW_WORDS = "Please also mention the backup window."
 CORRECTED = ANSWER + " The backup window is 02:00-03:00 UTC."
 CHILD_ANSWER = "The promoted child has completed its independent report."
+HISTORY_QUESTION = "Previously unreceived question: which approach should we use?"
+HISTORY_RESOLUTION = "Later than the trigger: the colleagues have already resolved this."
 QUEUED_TEXTS = [f"Queued-{index}: " + "full source words " * 80 + f" end-{index}" for index in range(12)]
 pytestmark = pytest.mark.serial
 
@@ -55,6 +57,9 @@ def test_separate_host_delayed_review_and_production_bridge(tmp_path, mode, repo
     assert facts["no_direct_send_tool"]
     assert facts["terminal_status"] == "completed"
     assert facts["latest_turn_source"] == "Fresh-2"
+    assert facts["initial_model_has_thread_question"]
+    assert facts["initial_model_has_later_resolution"]
+    assert facts["history_has_no_trigger_cutoff"]
     assert facts["outbox_states"] == ["delivered"] * len(facts["provider_texts"])
     assert len(facts["output_refs"]) == len(set(facts["output_refs"]))
     assert all(facts["output_refs"])
@@ -104,15 +109,15 @@ def test_late_promoted_child_survives_bridge_restart_before_parent_completion(tm
     assert facts["core_sources_unchanged"]
     assert facts["initial_status"] == "continuing" and facts["initial_child_ref"] == ""
     assert facts["discovered_child_ref"] and facts["child_completed_before_parent"]
-    assert facts["parent_discovery_status"] == ("interrupted" if dead_parent else "pending")
+    assert facts["parent_discovery_status"] == ("unresolved" if dead_parent else "pending")
     assert facts["bridge_restarts"] == 2
     assert facts["original_event_posts"] == 1
     assert facts["provider_texts"] == [CHILD_ANSWER]
     assert facts["outbox_states"] == ["delivered"]
     assert facts["output_task_ids"] == [facts["discovered_child_ref"]]
-    assert facts["final_inbox_state"] == ("failed" if dead_parent else "pending")
+    assert facts["final_inbox_state"] == "pending"
     if dead_parent:
-        assert "interrupted" in facts["final_inbox_error"]
+        assert "unresolved" in facts["final_inbox_error"]
         assert len(facts["host_pids"]) == 2 and len(set(facts["host_pids"])) == 2
         assert facts["killed_host_exit_codes"] == [-9]
 
@@ -129,7 +134,7 @@ def test_real_host_409_preserves_admitted_child_and_original_refusal_after_resta
     assert facts["provider_texts"] == [CHILD_ANSWER]
     assert facts["outbox_states"] == ["delivered"]
     assert facts["output_task_ids"] == [facts["discovered_child_ref"]]
-    assert facts["final_inbox_state"] == "failed"
+    assert facts["final_inbox_state"] == "pending"
     assert facts["original_refusal"] in facts["final_inbox_error"]
 
 
@@ -187,12 +192,11 @@ def _environment(root: Path, core: Path, mode: str) -> dict[str, str]:
         "OUROBOROS_PRESENCE_MAX_ACTIVE": "1", "OUROBOROS_MAX_ROUNDS": "12",
         "OUROBOROS_TASK_REVIEW_MODE": "auto", "OUROBOROS_REVIEW_ENFORCEMENT": mode,
         "OUROBOROS_REVIEW_MAX_CYCLES": "3", "OUROBOROS_SAFETY_MODE": "off",
-        "OUROBOROS_REVIEWER_SLOTS": json.dumps({
-            "triad": [{"slot_id": "acceptance-one", "route": {"kind": "api_chat", "target_id": "fixture/reviewer"},
-                       "effort": "high", "delivery": "packet"}],
-            "scope": [{"slot_id": "unused-scope", "route": {"kind": "api_chat", "target_id": "fixture/reviewer"}}],
-            "advisory": {"enabled": False, "route": {"kind": "api_chat", "target_id": "fixture/reviewer"}},
-        }),
+        "OUROBOROS_SUBAGENTS": json.dumps({"enabled": True, "items": [{
+            "subagent_id": "acceptance-one", "recommended_use": "Review the fixture report",
+            "review_eligible": True, "route": {"kind": "api_model", "target_id": "openai::fixture/reviewer"},
+            "effort": "high", "delivery": "packet",
+        }]}),
     }
     return env
 
@@ -359,7 +363,7 @@ def _drive(root: Path, mode: str, reporting: int, scenario: str) -> dict:
             def restart_host():
                 # Kill the actual parked author process; its canonical row stays
                 # RUNNING. Core's controller witness, not a fabricated status,
-                # must project the lost author as interrupted after restart.
+                # must retain the lost author as unresolved after restart.
                 nonlocal process, host_url
                 with httpx.Client(trust_env=False, timeout=5) as client:
                     used_modules.update(client.get(host_url + "/fixture-sources").json())
@@ -441,7 +445,7 @@ async def _consume(root: Path, host_url: str, identity: dict, provider: Provider
     from ouroboros.presence_runner import _read_previous_turn
     from ouroboros.task_results import load_task_result
 
-    posted, submitted, submit_statuses, queue_posts, wire_responses = [], [], [], [], []
+    posted, submitted, submit_statuses, queue_posts, wire_responses, history_reads = [], [], [], [], [], []
 
     def slack_api(request):
         method = request.url.path.rsplit("/", 1)[-1]
@@ -449,6 +453,11 @@ async def _consume(root: Path, host_url: str, identity: dict, provider: Provider
             return httpx.Response(200, json={"ok": True, "user": {"id": request.url.params["user"], "name": "reader"}})
         if method == "conversations.info":
             return httpx.Response(200, json={"ok": True, "channel": {"id": request.url.params["channel"]}})
+        if method == "conversations.replies":
+            history_reads.append(dict(request.url.params))
+            return httpx.Response(200, json={"ok": True, "messages": [
+                {"ts": "0.5", "user": "U2", "text": HISTORY_QUESTION},
+                {"ts": "99.0", "user": "U3", "text": HISTORY_RESOLUTION}], "has_more": False})
         assert method == "chat.postMessage", method
         body = json.loads(request.content)
         posted.append(body)
@@ -558,7 +567,7 @@ async def _consume(root: Path, host_url: str, identity: dict, provider: Provider
                 if scenario == "refused-child":
                     assert initial["status_code"] == 409, initial
                     assert first["code"] == "presence_resources_unavailable", first
-                    assert first["disposition"] == "retry", first
+                    assert first["disposition"] == "retained", first
                     assert first["work_ref"] and not first.get("text"), first
                     state = await child_state(lambda _state: True)
                     await restart_bridge()
@@ -568,7 +577,8 @@ async def _consume(root: Path, host_url: str, identity: dict, provider: Provider
                     assert len(submitted) == 1, submitted
                 else:
                     assert first["status"] == "continuing" and first["work_ref"] == "", first
-                    assert provider.review_entered.is_set() and not provider.release.is_set()
+                    assert await asyncio.to_thread(provider.review_entered.wait, 10)
+                    assert not provider.release.is_set()
                     provider.release.set()
                     state = await child_state(lambda value: provider.parent_review_entered.is_set() and (
                         value["parent"]["presence_continuation"]["lent_at"]
@@ -600,8 +610,8 @@ async def _consume(root: Path, host_url: str, identity: dict, provider: Provider
                 inbox, outbox = rows("inbox")[0], rows("outbox")
                 refusal_preserved = False
                 if scenario == "refused-child":
-                    from lib.host_adapter import _decode_refused_reference
-                    refusal = _decode_refused_reference(inbox["host_reference"])
+                    from lib.host_adapter import _decode_retained_reference
+                    refusal = _decode_retained_reference(inbox["host_reference"])
                     refusal_preserved = (inbox["host_reference"] == retained
                                          and refusal["http_status"] == initial["status_code"]
                                          and refusal["response"] == first)
@@ -624,9 +634,18 @@ async def _consume(root: Path, host_url: str, identity: dict, provider: Provider
                 return facts
             if scenario == "six":
                 for index in range(6):
-                    await ingest(f"Review-{index}", f"1.{index}", "Please prepare the status report.", f"1.{index}")
-                    assert await inbound.process_once()
-                assert len(provider.reviews) == 6 and not provider.release.is_set()
+                    event_id = f"Review-{index}"
+                    await ingest(event_id, f"1.{index}", "Please prepare the status report.", f"1.{index}")
+                    # An old author's due poll can win a worker iteration. Keep
+                    # pumping until this new event has its durable Host receipt.
+                    due()  # Exercise that scheduling interleave deliberately.
+                    deadline = time.monotonic() + 60
+                    while not next(row for row in rows("inbox") if row["event_id"] == event_id)["host_reference"]:
+                        assert time.monotonic() < deadline, rows("inbox")
+                        await inbound.process_once()
+                        await asyncio.sleep(0.05)
+                await asyncio.to_thread(_wait, lambda: len(provider.reviews) == 6)
+                assert not provider.release.is_set()
                 parked = rows("inbox")
                 assert all(row["state"] == "pending" for row in parked), parked
                 before = [body["markdown_text"] for body in posted]
@@ -650,7 +669,8 @@ async def _consume(root: Path, host_url: str, identity: dict, provider: Provider
             bad_token = await host_http.get(host_url + "/identity", headers={"X-Skill-Token": "wrong"})
             await ingest("Review-1", "1.0", "Please prepare the status report.")
             assert await inbound.process_once()
-            assert provider.review_entered.is_set() and not provider.release.is_set()
+            assert await asyncio.to_thread(provider.review_entered.wait, 10)
+            assert not provider.release.is_set()
             first_body = submitted[0]
             first = (await host_http.post(host_url + "/presence/turn", headers=headers, json=first_body)).json()
             assert first["status"] == "continuing", first
@@ -709,6 +729,10 @@ async def _consume(root: Path, host_url: str, identity: dict, provider: Provider
                      "no_direct_send_tool": all("slack_send_message" not in row["tools"] for row in provider.inputs),
                      "terminal_status": task["status"],
                      "latest_turn_source": latest_row["metadata"]["presence"]["event"]["source_event_id"],
+                     "initial_model_has_thread_question": HISTORY_QUESTION in str(inputs[0]["messages"]),
+                     "initial_model_has_later_resolution": HISTORY_RESOLUTION in str(inputs[0]["messages"]),
+                     "history_has_no_trigger_cutoff": bool(history_reads) and all(
+                         "latest" not in parameters and "oldest" not in parameters for parameters in history_reads),
                      "outbox_states": [row["state"] for row in outbox],
                      "output_refs": [row["output_ref"] for row in outbox],
                      "reporting_versions": [row["delivery_reporting_version"] for row in outbox],
