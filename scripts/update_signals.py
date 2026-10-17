@@ -14,6 +14,9 @@ if __package__ in {None, ''}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.github_api import APIError, GitHub
 
+REPOSITORY_QUERY = '''query($owner:String!,$repo:String!) {
+  repository(owner:$owner,name:$repo) { id hasDiscussionsEnabled }
+}'''
 CATEGORIES_QUERY = '''query($owner:String!,$repo:String!,$cursor:String) {
   repository(owner:$owner,name:$repo) { id hasDiscussionsEnabled
     discussionCategories(first:100,after:$cursor) {
@@ -37,15 +40,18 @@ CREATE_DISCUSSION = '''mutation($repository:ID!,$category:ID!,$title:String!,$bo
 
 
 def skills_category(api, variables):
+    # Check the feature before touching its connections: disabled Discussions
+    # must degrade without depending on category-connection availability.
+    repository = api.graphql(REPOSITORY_QUERY, variables)['repository']
+    if not repository or not repository['hasDiscussionsEnabled']:
+        return None
     cursor = None
     while True:
         repo = api.graphql(CATEGORIES_QUERY, {**variables, 'cursor': cursor})['repository']
-        if not repo or not repo['hasDiscussionsEnabled']:
-            return None
         connection = repo['discussionCategories']
         for category in connection['nodes']:
             if category['name'] == 'Skills':
-                return repo['id'], category['id']
+                return repository['id'], category['id']
         if not connection['pageInfo']['hasNextPage']:
             return None
         cursor = connection['pageInfo']['endCursor']

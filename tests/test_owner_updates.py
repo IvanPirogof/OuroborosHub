@@ -102,6 +102,7 @@ class OwnerUpdateTests(unittest.TestCase):
 
     def test_fork_run_without_associated_pr_list_still_binds_head_repository_and_sha(self):
         self.api.run['pull_requests'] = []
+        self.api.run['path'] = owner.WORKFLOW + '@refs/pull/12/merge'
         self.assertEqual(self.merge(), 12)
         self.api = API()
         self.api.pr['user']['login'] = 'Author'
@@ -151,6 +152,7 @@ class OwnerUpdateTests(unittest.TestCase):
         mutations = [
             lambda a: a.run.update(conclusion='failure'), lambda a: a.run.update(event='push'),
             lambda a: a.run.update(status='in_progress'), lambda a: a.run.update(path='other.yml'),
+            lambda a: a.run.update(path=owner.WORKFLOW + '.other@main'),
             lambda a: a.jobs[0].update(conclusion='skipped'), lambda a: a.jobs.pop(),
             lambda a: a.artifacts.clear(), lambda a: a.artifacts.append(copy.deepcopy(a.artifacts[0])),
             lambda a: a.artifacts[0].update(expired=True), lambda a: a.artifacts[0].update(size_in_bytes=100000),

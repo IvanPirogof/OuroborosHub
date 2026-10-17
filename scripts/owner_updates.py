@@ -121,7 +121,7 @@ def merge_owner_update(api, event, repository):
     prefix = f'/repos/{repository}'
     run = api.request('GET', f'{prefix}/actions/runs/{run_id}')
     if (run['event'] != 'pull_request' or run['status'] != 'completed' or run['conclusion'] != 'success'
-            or run['path'] != WORKFLOW or run['repository']['full_name'] != repository):
+            or run['path'].split('@', 1)[0] != WORKFLOW or run['repository']['full_name'] != repository):
         raise Ineligible('not a successful PR catalog validation run')
     jobs = list(api.pages(f'{prefix}/actions/runs/{run_id}/attempts/{run["run_attempt"]}/jobs', 'jobs'))
     passed = {j['name'] for j in jobs if j['status'] == 'completed' and j['conclusion'] == 'success'}

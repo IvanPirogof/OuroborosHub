@@ -35,7 +35,10 @@ class API:
 
     def graphql(self, query, variables):
         self.calls.append(('graphql', query, variables))
+        if query == signals.REPOSITORY_QUERY:
+            return {'repository': {'id': 'repo-id', 'hasDiscussionsEnabled': self.enabled}}
         if query == signals.CATEGORIES_QUERY:
+            assert self.enabled, 'disabled Discussions must not query category connections'
             first_page = self.category_pages and not variables['cursor']
             return {'repository': {'id': 'repo-id', 'hasDiscussionsEnabled': self.enabled,
                 'discussionCategories': connection([] if first_page or self.categories is None else [self.categories],
@@ -102,8 +105,8 @@ class SignalsTests(unittest.TestCase):
                 document = self.snapshot()
                 self.assertEqual(document['skills'], {})
                 self.assertEqual(document['author_repos'], {})
-                self.assertEqual(len(self.api.calls), 1)
-                self.assertEqual(self.api.calls[0][1], signals.CATEGORIES_QUERY)
+                self.assertEqual(len(self.api.calls), 2 if enabled else 1)
+                self.assertEqual(self.api.calls[0][1], signals.REPOSITORY_QUERY)
                 signals.publish(self.api, REPO, document)  # Empty is publishable, not a failing job.
 
     def test_duplicate_topics_reuse_oldest_and_unknown_counts_are_not_zero(self):

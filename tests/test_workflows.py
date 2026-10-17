@@ -123,6 +123,8 @@ class WorkflowTests(unittest.TestCase):
                        'tests/test_widget_theme_contracts.py', 'owner_updates.py verdict'):
             self.assertIn(marker, commands)
         self.assertTrue(any(s.get('uses') == 'actions/upload-artifact@v4' for s in catalog))
+        artifact = next(s for s in catalog if s.get('uses') == 'actions/upload-artifact@v4')
+        self.assertEqual(artifact['with']['overwrite'], 'true')  # Full reruns replace the prior attempt's verdict.
         transport = [s['run'] for s in workflow['jobs']['transport-skills']['steps'] if 'run' in s and 'pytest -p' in s['run']]
         self.assertEqual(transport, [
             'PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider -q -rs skills/slack-bridge/tests',

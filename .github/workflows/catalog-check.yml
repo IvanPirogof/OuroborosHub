@@ -39,6 +39,7 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           name: owner-update-verdict
+          overwrite: true
           path: ${{ runner.temp }}/owner-verdict/verdict.json
           if-no-files-found: error
           retention-days: 3

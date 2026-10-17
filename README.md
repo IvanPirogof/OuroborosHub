@@ -134,6 +134,9 @@ reads the artifact as JSON, rechecks the PR, files, owner and endorsements throu
 the API, and merges by SHA. It never checks out or executes PR code with its write
 token.
 
+If validation needs to be retried, rerun all jobs so the verdict and green checks
+belong to the same run attempt.
+
 To withdraw a release, set a reason and date:
 
 ```json
