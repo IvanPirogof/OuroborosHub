@@ -2306,8 +2306,8 @@
         },
         {
           "path": "plugin.py",
-          "sha256": "070bb599e25ed01ad64b83953215ce9ac4995d0e2daafd11d61556571509cb51",
-          "size": 37198
+          "sha256": "d32e0e6a5f6b83a63e676068ea981d82ac7f28f34e75974b27d68f9f180f30e9",
+          "size": 37401
         },
         {
           "path": "tests/test_capture_route.py",

@@ -26,8 +26,6 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import secrets
 
-from starlette.responses import JSONResponse
-
 try:  # Loaded as a package by the extension loader.
     from . import lists_core
 except ImportError:  # Direct import (tests, tooling): resolve the sibling file.
@@ -700,7 +698,11 @@ async def route_check(request: Any) -> Dict[str, Any]:
         return {"ok": False, "error": exc.message}
 
 
-async def route_add(request: Any) -> JSONResponse:
+async def route_add(request: Any) -> Any:
+    # A non-2xx answer keeps the owner's draft (the composer's skill.request clears it only after a 2xx),
+    # so this route answers with a Response; imported here, the rest of the skill needs no web stack.
+    from starlette.responses import JSONResponse
+
     body = await _json_body(request)
 
     def add() -> Dict[str, Any]:
