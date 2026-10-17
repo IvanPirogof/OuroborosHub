@@ -172,7 +172,7 @@ def relative_path(value, *, allow_root=False):
 
 def validate_entry(entry, categories):
     object_fields(entry, ('schema_version', 'name', 'description', 'category', 'owner', 'version', 'source', 'digest', 'withdrawn'),
-                  ('install_specs', 'when_to_use', 'author', 'type'), label='entry')
+                  ('install_specs', 'when_to_use', 'author', 'type', 'withdrawn_releases'), label='entry')
     schema(entry, 2, 'entry')
     for field in ('name', 'description', 'version'):
         text_field(entry[field], field)
@@ -198,6 +198,19 @@ def validate_entry(entry, categories):
         if not isinstance(withdrawn['at'], str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', withdrawn['at']):
             raise ValueError('withdrawn.at must be YYYY-MM-DD')
         date.fromisoformat(withdrawn['at'])
+    releases = entry.get('withdrawn_releases', [])
+    if not isinstance(releases, list):
+        raise ValueError('withdrawn_releases must be a list')
+    withdrawn_digests = set()
+    for release in releases:
+        object_fields(release, ('digest', 'version', 'reason'), label='withdrawn release')
+        release_hash(release['digest'])
+        if not isinstance(release['version'], str):
+            raise ValueError('withdrawn release version must be a string')
+        text_field(release['reason'], 'withdrawn release reason')
+        if release['digest'] == entry['digest'] or release['digest'] in withdrawn_digests:
+            raise ValueError('withdrawn release digests must be unique and cannot equal the current release')
+        withdrawn_digests.add(release['digest'])
     source = entry['source']
     if not isinstance(source, dict):
         raise ValueError('source must be an object')

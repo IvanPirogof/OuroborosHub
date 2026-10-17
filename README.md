@@ -23,7 +23,8 @@ presences; the built-in `telegram` is the owner's connection to their own Ourobo
 | `signals.json` on branch `signals` | Daily community votes, comment counts and author-repository stars. |
 
 An entry names its GitHub owner, a version, a description, one or two categories,
-a source, a release digest and a withdrawal status. Optional `when_to_use` supplies
+a source, a release digest and a withdrawal status. Optional `withdrawn_releases`
+records withdrawn versions by digest. Optional `when_to_use` supplies
 additional discovery text. `install_specs` is generated from the manifest's first
 nonempty `install_specs`, `install` or `dependencies` value, without normalization.
 
@@ -138,11 +139,27 @@ token.
 If validation needs to be retried, rerun all jobs so the verdict and green checks
 belong to the same run attempt.
 
-To withdraw a release, set a reason and date:
+To withdraw the entire entry from new installs, set `withdrawn` to a reason and date:
 
 ```json
 {"reason": "Superseded by another skill", "at": "2026-10-17"}
 ```
+
+To withdraw one older version while keeping the current release available, add
+`withdrawn_releases` to the entry:
+
+```json
+{"withdrawn_releases": [{"digest": "<64 lowercase hex digits of the withdrawn release>", "version": "0.10.0", "reason": "Incorrect results"}]}
+```
+
+Digests must be unique and cannot equal the entry's current digest; each reason
+must be nonempty. Version labels are strings, not ordered SemVer. Holders of that
+exact digest see the withdrawal and can remove it. To offer a previous release,
+revert the entry and its hosted payload (or git commit pin) to that release, then
+record the bad digest in `withdrawn_releases`. Renew an Official endorsement if
+needed. The app offers the reverted release by its different digest. Withdrawal
+records stay in the v2 entries read by the app; the v1 catalog remains unchanged
+by those records.
 
 Keep legacy hosted payloads when converting a hosted entry to a git pointer or
 removing it from discovery. An adoption or pointer conversion requires verified

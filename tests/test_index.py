@@ -180,6 +180,34 @@ class IndexTests(unittest.TestCase):
         (self.root / 'entries/demo.json').unlink()
         self.assertEqual([r['slug'] for r in builder.build_catalog(self.root)['skills']], ['demo', 'other'])
 
+    def test_per_version_withdrawals_remain_in_v2_entries_and_leave_v1_unchanged(self):
+        self.assertEqual(builder.main([], root=self.root), 0)
+        before = (self.root / 'catalog.json').read_bytes()
+        releases = [{'digest': 'a' * 64, 'version': 'nightly red', 'reason': 'Incorrect results'},
+                    {'digest': 'b' * 64, 'version': '', 'reason': 'Release label unknown'}]
+        self.entry['withdrawn_releases'] = releases
+        self.write('entries/demo.json', self.entry)
+        self.assertEqual(builder.main([], root=self.root), 0)
+        self.assertEqual(builder.main(['--refresh', 'demo'], root=self.root), 0)
+        self.assertEqual(builder.load_hub(self.root)[1]['demo']['withdrawn_releases'], releases)
+        self.assertEqual(builder.read_json(self.root / 'entries/demo.json')['withdrawn_releases'], releases)
+        self.assertEqual((self.root / 'catalog.json').read_bytes(), before)
+        self.assertEqual(builder.main(['--check'], root=self.root), 0)
+
+    def test_per_version_withdrawals_reject_invalid_digests_reasons_and_current_release(self):
+        release = {'digest': 'a' * 64, 'version': 'v1', 'reason': 'Incorrect results'}
+        for valid in ([], [release]):
+            builder.validate_entry({**self.entry, 'withdrawn_releases': valid}, {'search'})
+        malformed = [None, {}, '', [None], [release, release],
+                     [{**release, 'digest': self.entry['digest']}]]
+        for changes in ({'digest': 'A' * 64}, {'digest': 'a' * 63}, {'digest': 'g' * 64}, {'digest': 1},
+                        {'version': 1}, {'reason': ''}, {'reason': ' \n\t'}, {'reason': None}, {'extra': 'unexpected'}):
+            malformed.append([{**release, **changes}])
+        malformed.extend([{k: v for k, v in release.items() if k != missing}] for missing in release)
+        for releases in malformed:
+            with self.subTest(releases=releases), self.assertRaises(ValueError):
+                builder.validate_entry({**self.entry, 'withdrawn_releases': releases}, {'search'})
+
     def test_git_schema_exact_pin_and_digest_verification(self):
         source = {'kind': 'git', 'repo': 'https://github.com/author/repo', 'path': '', 'commit': 'a' * 40}
         self.entry['source'] = source
@@ -358,6 +386,19 @@ class IndexTests(unittest.TestCase):
 
 
 class ReleaseIdentityTests(unittest.TestCase):
+    def test_all_fifty_v1_rows_keep_every_original_key(self):
+        original = json.loads(builder.run_git(['show', '6d604c9:catalog.json'], ROOT))
+        previous = {row['slug']: row for row in original['skills']}
+        generated = builder.build_catalog(ROOT)
+        current = {row['slug']: row for row in generated['skills']}
+        self.assertEqual(len(previous), 50)
+        self.assertEqual(set(current), set(previous))
+        self.assertTrue(original.keys() <= generated.keys())
+        for name, row in previous.items():
+            with self.subTest(skill=name):
+                self.assertTrue(row.keys() <= current[name].keys())
+                self.assertNotIn('withdrawn_releases', current[name])
+
     def test_walk_notes_cache_assets_declared_entries_and_dependency_identity(self):
         with tempfile.TemporaryDirectory(prefix='hub-digest-') as tmp:
             root = Path(tmp)
