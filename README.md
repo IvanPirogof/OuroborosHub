@@ -251,8 +251,9 @@ PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider -q skills/calenda
 
 The hub tests include mocked GitHub APIs for owner authorization, signals and
 catalog-to-mirror sequencing. The release-identity test compares all hosted skills
-with the designated WP-B2 core checkout when available; hub CI cleanly skips that
-cross-repository check when the checkout or interpreter is absent.
+with the core checkout selected by `OUROBOROS_IDENTITY_CORE_ROOT`, using the test
+runner's Python with core requirements installed. Without that variable the
+cross-repository check is reported as skipped.
 
 Module widgets can declare `render.appearance: host` and feature-detect
 `OuroborosWidget.onTheme`. Preserve state while applying Light/Dark, unsubscribe

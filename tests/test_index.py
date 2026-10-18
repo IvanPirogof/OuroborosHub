@@ -1,4 +1,7 @@
-"""Canonical hub inputs, release bytes and old-client projection."""
+"""Canonical hub inputs, release bytes and old-client projection.
+
+Set OUROBOROS_IDENTITY_CORE_ROOT to opt into digest parity with a core checkout.
+"""
 from __future__ import annotations
 
 import contextlib
@@ -9,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -20,8 +24,6 @@ from scripts.release_digest import (DIGEST_DOMAIN, PER_INSTALL_NOTE_FILENAMES, d
                                     manifest_declaration, payload_digest, payload_files, release_declaration)
 
 ROOT = Path(__file__).resolve().parents[1]
-CORE = Path('/Users/anton/worktrees/ouroboros/skills-v4-b2')
-CORE_PYTHON = Path('/Users/anton/Desktop/Ouroboros.app/Contents/Resources/python-standalone/bin/python3')
 
 
 class IndexTests(unittest.TestCase):
@@ -453,9 +455,18 @@ class ReleaseIdentityTests(unittest.TestCase):
             (root / 'SKILL.md').rename(root / 'skill.json')
             self.assertEqual(release_declaration(root), front['install'])
 
-    @unittest.skipUnless((CORE / 'ouroboros/skill_identity.py').is_file() and CORE_PYTHON.is_file(),
-                         'designated core checkout/interpreter absent; cross-repository digest check skipped')
+    def test_core_digest_check_skips_without_an_explicit_checkout(self):
+        with patch.dict(os.environ), patch.object(subprocess, 'run') as run:
+            os.environ.pop('OUROBOROS_IDENTITY_CORE_ROOT', None)
+            with self.assertRaisesRegex(unittest.SkipTest, 'OUROBOROS_IDENTITY_CORE_ROOT'):
+                self.test_all_hosted_releases_match_core_read_only()
+            run.assert_not_called()
+
     def test_all_hosted_releases_match_core_read_only(self):
+        configured = os.environ.get('OUROBOROS_IDENTITY_CORE_ROOT', '').strip()
+        if not configured:
+            self.skipTest('set OUROBOROS_IDENTITY_CORE_ROOT for the cross-repository digest check')
+        core = Path(configured).resolve()
         rows = [builder.read_json(path) for path in sorted((ROOT / 'entries').glob('*.json'))]
         cases = [{'path': str(ROOT / r['source']['path']),
                   'front': builder.read_manifest(ROOT / r['source']['path'])} for r in rows if r['source']['kind'] == 'hosted']
@@ -467,11 +478,11 @@ print(json.dumps([payload_digest(Path(c['path']), manifest_entry=c['front'].get(
     manifest_scripts=c['front'].get('scripts')) for c in cases]))
 '''
         with tempfile.TemporaryDirectory(prefix='hub-core-identity-') as tmp:
-            env = {'PATH': os.environ.get('PATH', ''), 'HOME': tmp, 'PYTHONPATH': str(CORE),
+            env = {'PATH': os.environ.get('PATH', ''), 'HOME': tmp, 'PYTHONPATH': str(core),
                    'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONNOUSERSITE': '1',
                    'OUROBOROS_APP_ROOT': tmp, 'OUROBOROS_DATA_DIR': tmp + '/data',
                    'OUROBOROS_REPO_DIR': tmp + '/repo', 'OUROBOROS_SETTINGS_PATH': tmp + '/settings.json'}
-            run = subprocess.run([str(CORE_PYTHON), '-B', '-c', code], input=json.dumps(cases),
+            run = subprocess.run([sys.executable, '-B', '-c', code], input=json.dumps(cases),
                                  text=True, encoding='utf-8', capture_output=True, cwd=tmp, env=env, timeout=90)
         self.assertEqual(run.returncode, 0, run.stderr)
         expected = json.loads(run.stdout.strip().splitlines()[-1])
