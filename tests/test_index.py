@@ -403,7 +403,10 @@ class ReleaseIdentityTests(unittest.TestCase):
 
     def test_walk_notes_cache_assets_declared_entries_and_dependency_identity(self):
         with tempfile.TemporaryDirectory(prefix='hub-digest-') as tmp:
-            root = Path(tmp)
+            root = Path(tmp) / 'payload'
+            root.mkdir()
+            alias = Path(tmp) / 'linked-payload'
+            alias.symlink_to(root, target_is_directory=True)
             (root / 'SKILL.md').write_text('payload', encoding='utf-8')
             initial = payload_digest(root)
             for name in PER_INSTALL_NOTE_FILENAMES:
@@ -416,10 +419,13 @@ class ReleaseIdentityTests(unittest.TestCase):
             self.assertNotEqual(payload_digest(root), initial)
             (root / 'data.wasm').write_bytes(b'\0asset')
             (root / '.env.example').write_text('example', encoding='utf-8')
-            names = [p.relative_to(root).as_posix() for p in payload_files(root)]
-            self.assertEqual(names, ['.env.example', 'SKILL.md', 'data.wasm', 'nested/.clawhub.json'])
-            self.assertIn('__pycache__/ignored.pyc', [p.relative_to(root).as_posix() for p in payload_files(
-                root, manifest_entry='__pycache__/ignored.pyc')])
+            for directory in (root, alias):
+                with self.subTest(directory=directory.name):
+                    resolved = directory.resolve()
+                    names = [p.relative_to(resolved).as_posix() for p in payload_files(directory)]
+                    self.assertEqual(names, ['.env.example', 'SKILL.md', 'data.wasm', 'nested/.clawhub.json'])
+                    self.assertIn('__pycache__/ignored.pyc', [p.relative_to(resolved).as_posix() for p in payload_files(
+                        directory, manifest_entry='__pycache__/ignored.pyc')])
             base = payload_digest(root)
             (root / '.clawhub.json').write_text(json.dumps({'install_specs': {
                 'raw': [{'kind': 'brew', 'package': 'x'}]}}), encoding='utf-8')
