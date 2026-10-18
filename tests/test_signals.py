@@ -79,8 +79,8 @@ class SignalsTests(unittest.TestCase):
         self.entries = {'alpha': {'source': {'kind': 'hosted'}},
                         'beta': {'source': {'kind': 'git', 'repo': 'https://github.com/author/repo'}}}
 
-    def snapshot(self):
-        return signals.snapshot(self.api, REPO, self.entries, generated_at='2026-10-17T00:00:00Z')
+    def snapshot(self, pause=lambda: None):
+        return signals.snapshot(self.api, REPO, self.entries, generated_at='2026-10-17T00:00:00Z', pause=pause)
 
     def test_paginates_reuses_topics_creates_missing_and_reads_author_stars(self):
         self.api.category_pages = self.api.discussion_pages = True
@@ -96,6 +96,36 @@ class SignalsTests(unittest.TestCase):
         self.assertIn('upvoteCount', signals.DISCUSSIONS_QUERY)
         self.assertEqual(self.snapshot(), document)
         self.assertEqual(len([c for c in self.api.calls if c[1] == signals.CREATE_DISCUSSION]), 1)
+
+    def test_creations_are_paced_and_a_creation_limit_still_publishes_the_rest(self):
+        self.entries = {name: {'source': {'kind': 'hosted'}} for name in ('alpha', 'beta', 'delta', 'gamma')}
+        self.entries['epsilon'] = {'source': {'kind': 'git', 'repo': 'https://github.com/author/repo'}}
+        real, attempts, pauses = self.api.graphql, [], []
+
+        def limited(query, variables):
+            if query == signals.CREATE_DISCUSSION:
+                attempts.append(variables['title'])
+                if len(attempts) > 1:
+                    raise RuntimeError('GitHub GraphQL request failed (RATE_LIMITED)')
+            return real(query, variables)
+
+        self.api.graphql = limited
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            document = self.snapshot(pause=lambda: pauses.append(1))
+        self.assertEqual(attempts, ['beta', 'delta'])  # no more attempts after the limit
+        self.assertEqual(pauses, [1])  # a pause before every creation but the first
+        self.assertEqual(sorted(document['skills']), ['alpha', 'beta'])  # no topic, no signal (never zero)
+        self.assertEqual(document['author_repos'], {'https://github.com/author/repo': {'stars': 4}})
+        self.assertIn('Topic for delta not created (GitHub GraphQL request failed (RATE_LIMITED))', errors.getvalue())
+        with tempfile.TemporaryDirectory(prefix='hub-signals-') as tmp:
+            output = Path(tmp) / 'signals.json'
+            attempts.clear()
+            with patch.object(signals, 'GitHub', return_value=self.api), patch.dict(os.environ, {'GITHUB_REPOSITORY': REPO}), \
+                    patch.object(signals, 'CREATE_PAUSE_SEC', 0), contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(signals.main(['--output', str(output)]), 0)
+            self.assertEqual(self.api.calls[-1][1], f'/repos/{REPO}/git/refs/heads/signals')
 
     def test_disabled_discussions_or_missing_category_return_empty_without_creating_anything(self):
         for enabled, category in ((False, self.api.categories), (True, None)):
@@ -158,7 +188,9 @@ class SignalsTests(unittest.TestCase):
             self.assertEqual(json.loads(output.read_text(encoding='utf-8'))['skills'], {})
             self.assertEqual(self.api.calls[-1][1], f'/repos/{REPO}/git/refs/heads/signals')
             output.unlink()
+            failure = io.StringIO()
             with patch.object(signals, 'GitHub', side_effect=RuntimeError('synthetic')), \
-                    contextlib.redirect_stderr(io.StringIO()):
+                    contextlib.redirect_stderr(failure):
                 self.assertEqual(signals.main(['--output', str(output)]), 1)
             self.assertFalse(output.exists())
+            self.assertIn('(RuntimeError: synthetic)', failure.getvalue())  # the cause, never a credential

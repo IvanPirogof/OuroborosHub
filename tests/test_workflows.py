@@ -170,6 +170,11 @@ class GitHubAPITests(unittest.TestCase):
         with patch.object(api, 'request', return_value={'errors': [{'message': 'synthetic-secret'}]}), self.assertRaises(RuntimeError) as raised:
             api.graphql('query {}', {})
         self.assertNotIn('synthetic-secret', str(raised.exception))
+        limited = {'errors': [{'type': 'RATE_LIMITED', 'message': 'synthetic-secret'}]}
+        with patch.object(api, 'request', return_value=limited), self.assertRaises(RuntimeError) as raised:
+            api.graphql('query {}', {})
+        self.assertIn('RATE_LIMITED', str(raised.exception))  # the error type, never its message
+        self.assertNotIn('synthetic-secret', str(raised.exception))
 
     def test_signed_artifact_redirect_drops_authorization(self):
         request = Request('https://api.github.com/artifact', headers={'Authorization': 'Bearer synthetic'})

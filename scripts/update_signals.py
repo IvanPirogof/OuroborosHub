@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 from urllib.parse import urlsplit
 
 if __package__ in {None, ''}:
@@ -32,6 +33,8 @@ DISCUSSIONS_QUERY = '''query($owner:String!,$repo:String!,$category:ID!,$cursor:
     }
   }
 }'''
+# GitHub limits how fast content is created; one topic per skill on a new hub is a burst.
+CREATE_PAUSE_SEC = 2.0
 CREATE_DISCUSSION = '''mutation($repository:ID!,$category:ID!,$title:String!,$body:String!) {
   createDiscussion(input:{repositoryId:$repository,categoryId:$category,title:$title,body:$body}) {
     discussion { title url upvoteCount comments { totalCount } }
@@ -68,7 +71,7 @@ def discussion_rows(api, variables, category):
         cursor = connection['pageInfo']['endCursor']
 
 
-def snapshot(api, repository, entries, *, generated_at=None):
+def snapshot(api, repository, entries, *, generated_at=None, pause=lambda: time.sleep(CREATE_PAUSE_SEC)):
     result = {'schema_version': 1,
               'generated_at': generated_at or datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
               'skills': {}, 'author_repos': {}}
@@ -82,14 +85,26 @@ def snapshot(api, repository, entries, *, generated_at=None):
     for row in discussion_rows(api, variables, category_id):
         # Existing duplicates are not deleted. Reuse the oldest topic consistently.
         discussions.setdefault(row['title'], row)
+    creating, created = True, 0
     for name in sorted(entries):
         row = discussions.get(name)
+        if row is None and not creating:
+            continue  # its topic waits for the next run; no topic is no signal, never zero
         if row is None:
-            row = api.graphql(CREATE_DISCUSSION, {
-                'repository': repository_id, 'category': category_id, 'title': name,
-                'body': f'Discuss [{name}](https://github.com/{repository}/blob/main/entries/{name}.json): '
-                        'share examples, questions and feedback. Upvote this topic if the skill is useful to you.',
-            })['createDiscussion']['discussion']
+            if created:
+                pause()
+            try:
+                row = api.graphql(CREATE_DISCUSSION, {
+                    'repository': repository_id, 'category': category_id, 'title': name,
+                    'body': f'Discuss [{name}](https://github.com/{repository}/blob/main/entries/{name}.json): '
+                            'share examples, questions and feedback. Upvote this topic if the skill is useful to you.',
+                })['createDiscussion']['discussion']
+            except (APIError, RuntimeError) as exc:
+                # A creation limit stops new topics for this run; existing topics and stars still publish.
+                print(f'Topic for {name} not created ({exc}); the next run continues', file=sys.stderr)
+                creating = False
+                continue
+            created += 1
         votes, comments = row.get('upvoteCount'), (row.get('comments') or {}).get('totalCount')
         signal = {}
         if type(votes) is int and votes >= 0:
@@ -153,8 +168,9 @@ def main(argv=None):
         args.output.write_text(json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2) + '\n', encoding='utf-8')
         publish(api, repository, document)
         print(f"Published signals for {len(document['skills'])} skills to the signals branch")
-    except (APIError, OSError, ValueError, RuntimeError, KeyError):
-        print('Signals update failed; check API access and repository data', file=sys.stderr)
+    except (APIError, OSError, ValueError, RuntimeError, KeyError) as exc:
+        print(f'Signals update failed ({type(exc).__name__}: {exc}); check API access and repository data',
+              file=sys.stderr)
         return 1
     return 0
 

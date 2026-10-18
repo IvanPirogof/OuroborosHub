@@ -49,7 +49,10 @@ class GitHub:
     def graphql(self, query, variables):
         result = self.request('POST', '/graphql', {'query': query, 'variables': variables})
         if result.get('errors') or not isinstance(result.get('data'), dict):
-            raise RuntimeError('GitHub GraphQL request failed')
+            # Error types (RATE_LIMITED, FORBIDDEN, ...) say what went wrong and carry no credential.
+            types = sorted({str(error.get('type') or 'unknown') for error in result.get('errors') or []
+                            if isinstance(error, dict)})
+            raise RuntimeError(f"GitHub GraphQL request failed ({', '.join(types) or 'no data'})")
         return result['data']
 
     def pages(self, path, key=None):
