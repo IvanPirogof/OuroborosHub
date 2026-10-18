@@ -175,12 +175,13 @@ canonical answer reads `failed` (`cancelled` when recorded so) with
 facts (`code`, `recorded_status`, `uncertainty`) prove neither delivery nor the
 absence of external effects, and observation starts no new generation. A real
 child keeps its own reference in `child_work_ref`, which any view may name, and
-is observed on its own. The transport stores it in the same commit that settles
-the reference that named it. Older Hosts may still answer `unresolved`, which
-stays observable. Canonical selected outputs keep their source and delivery
-identity across repeated polls and restarts; a retained receipt itself is never
-sent as speech. This does not claim exactly-once provider delivery after
-ambiguous network acceptance.
+is observed on its own. The transport stores it in the same commit that records
+the poll that named it, releasing a pending reference or settling a terminal
+one. Older Hosts may still answer `unresolved`, which stays observable.
+Canonical selected outputs keep their source and delivery identity across
+repeated polls and restarts; a retained receipt itself is never sent as speech.
+This does not claim exactly-once provider delivery after ambiguous network
+acceptance.
 `rejected` ends an event-specific refusal; before-admission `retry` and `blocked`
 retain retry custody, including after account or binding repair. Missing or unknown typed
 dispositions stay retryable, even on HTTP 403/404. Full queue recovery requires

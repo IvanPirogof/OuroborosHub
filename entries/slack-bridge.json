@@ -3,7 +3,7 @@
     "messaging"
   ],
   "description": "Bidirectional Slack presence transport for Ouroboros using Socket Mode, durable delivery queues, threaded replies, proactive text messages, and inbound file staging.",
-  "digest": "ea4725091128dac7a34ddb440972d5cef81e55fe9be66cf2186be6e6e1b58862",
+  "digest": "cbacc5b5ef307b458fc30511c39ceb021c20756fe7ef751321e33fcb5fee7eae",
   "install_specs": [
     "httpx",
     "websockets"
