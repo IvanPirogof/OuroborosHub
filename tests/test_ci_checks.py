@@ -4,15 +4,31 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shlex
 import tempfile
 import unittest
 from unittest.mock import patch
 
+import yaml
+
 from scripts import ci_checks as ci
 from scripts.build_index import run_git
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 class SelectionTests(unittest.TestCase):
+    def test_every_top_level_test_module_runs_in_ci(self):
+        workflow = yaml.safe_load((ROOT / '.github/workflows/catalog-check.yml').read_text(encoding='utf-8'))
+        scheduled = {path for suite in ci.SUITES.values() for path in suite['tests']}
+        for step in workflow['jobs']['catalog']['steps']:
+            command = shlex.split(step.get('run', ''))
+            if 'pytest' in command:
+                scheduled.update(command[command.index('pytest') + 1:])
+        discovered = {path.relative_to(ROOT).as_posix() for path in (ROOT / 'tests').glob('test_*.py')}
+        self.assertEqual(discovered - scheduled, set(),
+                         'Add uncovered test modules to the catalog job or a hosted suite tests list')
+
     def test_metadata_prs_skip_hosted_suites_and_payload_prs_select_their_consumers(self):
         self.assertEqual(ci.selected_suites(set()), [])
         self.assertEqual(ci.selected_suites({'README.md', 'entries/calendar.json', 'official.json', 'catalog.json'}), [])
