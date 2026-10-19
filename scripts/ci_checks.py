@@ -13,7 +13,8 @@ if __package__ in {None, ''}:
 from scripts.build_index import refresh_legacy_entries, run_git
 
 SUITES = {
-    'smart-lists': {'skills': ['smart_lists'], 'tests': ['skills/smart_lists/tests', 'tests/test_smart_lists_browser.py']},
+    'smart-lists': {'skills': ['smart_lists'], 'tests': ['skills/smart_lists/tests', 'tests/test_smart_lists_browser.py'],
+                    'dependencies': ['starlette']},
     'gigasearch': {'skills': ['gigasearch'], 'tests': ['skills/gigasearch/test_gigasearch.py']},
     'cache-efficiency': {'skills': ['cache_efficiency_snapshot'],
                          'tests': ['skills/cache_efficiency_snapshot/test_cache_efficiency.py']},
