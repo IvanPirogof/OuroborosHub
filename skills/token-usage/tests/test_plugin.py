@@ -59,7 +59,8 @@ class OwnedTemporaryCase(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="test-plugin-")
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # macOS temp folders sit behind /var -> /private/var; preferences refuse symlinked parents.
+        self.root = Path(self.temporary.name).resolve()
 
 
 @unittest.skipIf(plugin is None, "Starlette is unavailable; strict plugin import requires host dependency")
