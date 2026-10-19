@@ -1,7 +1,7 @@
 ---
 name: claudexor_quotas
 description: "Claudexor quota dashboard and read-only quota_summary: sorted account bars, per-window and calibrated joint timelines, reported resets, measured pace, dated account resources and reversible row visibility. The optional granted context snapshot supplies the same figures at eligible host context tails; no routing, account changes or automatic provider refresh."
-version: 0.11.0
+version: 0.12.0
 type: extension
 runtime: python3
 entry: plugin.py
@@ -15,6 +15,12 @@ model_experience:
   what_model_sees: "One read-only quota_summary tool with a fixed schema returns reserve, coverage, resets, measured pace, joint metrics and individually dated resources. Separately, when the host grants context_snapshot, the collector publishes a deterministic local snapshot for eligible integrating contexts; the host appends it at the tail, expires or withdraws it, without provider calls or dispatch authority."
   token_effect: "Fixed tool schema/description while enabled; voluntary calls add JSON, smaller per family. The optional granted local snapshot adds changed text at the eligible host context tail, with validity/withdrawal; unchanged valid content is not duplicated. No automatic tool call or prompt-cache benefit is promised."
 timeout_sec: 180
+contributes:
+  - id: quota
+    placement: composer.chips
+    label: Quotas
+    source: {route: chip, refresh_s: 60}
+    action: {verb: open.tab}
 ui_tab:
   tab_id: quotas
   title: Claudexor Quotas
@@ -27,7 +33,16 @@ ui_tab:
     start: auto
 ---
 
-# Claudexor Quotas (v0.11.0)
+# Claudexor Quotas (v0.12.0)
+
+The composer quota chip opens this widget. `GET chip` uses the same passive
+cached read as `quotas?reuse=1&chart=0`; it never requests provider refresh.
+`quota_chip.py` formats the summary's tightest measured limit per family:
+average remaining share across measured accounts, never a sum across limits.
+Its text is at most 24 characters, prioritizing the lowest remaining families;
+the title lists every family and its reported next reset (or unknown).
+Color thresholds are display formatting only: <=10% bad, <=25% warn, otherwise
+ok. Unavailable readings show a muted “—” with the reason; unknown is not zero.
 
 A projection of the host's own account surface, plus a small planner on top of
 it: how much measured quota is left per agent family and limit, when it is

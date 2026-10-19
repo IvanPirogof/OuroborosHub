@@ -40,6 +40,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:  # the host loads plugin.py as a package: siblings are relative imports
     from . import quota_analytics as qa
+    from . import quota_chip
     from . import quota_context
     from . import quota_history
     from . import quota_resources as qr
@@ -47,6 +48,7 @@ try:  # the host loads plugin.py as a package: siblings are relative imports
     from . import quota_summary as qs
 except ImportError:  # imported directly from the skill directory (tests)
     import quota_analytics as qa  # type: ignore[no-redef]
+    import quota_chip  # type: ignore[no-redef]
     import quota_context  # type: ignore[no-redef]
     import quota_history  # type: ignore[no-redef]
     import quota_resources as qr  # type: ignore[no-redef]
@@ -2105,6 +2107,10 @@ def register(api: Any) -> None:
             answer = {"error": f"quota summary failed ({type(exc).__name__}); nothing is claimed"}
         return json.dumps(answer, separators=(",", ":"))
 
+    def chip_route(_request: Any) -> Dict[str, Any]:
+        return quota_chip.chip(quotas_route({"query_params": {"reuse": "1", "chart": "0"}}))
+
+    api.register_route("chip", chip_route, methods=("GET",))
     api.register_route("quotas", quotas_route, methods=("GET",))
     api.register_route("refresh", refresh_route, methods=("POST",))
     api.register_route("prefs", prefs_route, methods=("POST",))
