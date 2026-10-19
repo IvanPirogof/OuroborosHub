@@ -449,20 +449,25 @@ class CustodyStore:
                 self._enqueue_outbox(conn, identity, _reply_payload(event, str(output["text"])), time.time())
             conn.commit()
 
-    def complete_work(self, work_ref: str, *, status: str, text: str) -> None:
+    def complete_work(self, work_ref: str, *, status: str, text: str, child_ref: str = "") -> None:
+        """Settle a reference; retain a child its terminal view names in the same commit."""
         if status not in {"completed", "failed", "cancelled"}:
             raise ValueError("work status is not terminal")
         now = time.time()
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
-                "SELECT event_id, role, event_json FROM presence_work "
+                "SELECT event_id, binding_id, role, event_json FROM presence_work "
                 "WHERE work_ref=? AND state='leased'",
                 (work_ref,),
             ).fetchone()
             if row is None:
                 conn.rollback()
                 raise ValueError("presence work is not leased")
+            if child_ref and child_ref != work_ref:
+                event = json.loads(row["event_json"])
+                mode = int((event.get("_reporting") or {}).get("version") == 1)
+                self._add_work(conn, row["event_id"], row["binding_id"], child_ref, "child", event, mode, now)
             updated = conn.execute(
                 """
                 UPDATE presence_work

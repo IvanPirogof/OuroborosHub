@@ -1,0 +1,24 @@
+{
+  "category": [
+    "health"
+  ],
+  "description": "Local second-opinion layer over the owner's own medical data — genome (VCF), laboratory history, prescriptions, wearables. 35 tools; answers carry provenance and say what the data cannot support. Not a medical device.",
+  "digest": "0d2d237ef02bd2cf5ff351c80952426860f7d6b17e9a09af9df8f45e6fb17d68",
+  "install_specs": [
+    {
+      "kind": "pip",
+      "package": "scholion"
+    }
+  ],
+  "name": "scholion",
+  "owner": "l1nkberry",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/scholion"
+  },
+  "type": "extension",
+  "version": "0.5.7",
+  "when_to_use": "The owner asks about their own medical data — check a new prescription as a second opinion (pharmacogenetics, interactions with the current regimen, monitoring labs), review laboratory results and trends, look up a locus or clinically significant ClinVar findings in their VCF, polygenic scores, longevity findings, sleep and lifestyle metrics, movement toward a health goal, which tests to take next, or a pre-visit summary.",
+  "withdrawn": null
+}
