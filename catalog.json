@@ -1,7 +1,7 @@
 {
   "description": "Official Ouroboros skills catalog.",
   "name": "OuroborosHub",
-  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/f84f9f44cb2b494f6feb0b37756269c890c5724d",
+  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/c367088e1f4f3a8c855ffabd0827c8509f2cfdb7",
   "schema_version": 1,
   "skills": [
     {
@@ -643,18 +643,23 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "0dfd0a78f87c27d3fb9f82a87ff8f81e1c1a70222123049b41c6556d20783a06",
-          "size": 77744
+          "sha256": "83a0da358c1ebbdd59d31b26a9d1c55c9aca552b49a950ce900fb633db3f202f",
+          "size": 78509
         },
         {
           "path": "plugin.py",
-          "sha256": "29e9db69a406b66f4339fcabd38238e8b0d737c8c7975875017a529389c02803",
-          "size": 96045
+          "sha256": "05adffa1108c178506c685594ced4a0fcfa509fd30f038574f6d7528008c74a6",
+          "size": 96330
         },
         {
           "path": "quota_analytics.py",
           "sha256": "ba6f5cceea4003d6d9f5392f5e8792a8334d8ce46bda1aa24364a7219d378862",
           "size": 34158
+        },
+        {
+          "path": "quota_chip.py",
+          "sha256": "cc91359851dfe49c7857e99e33ba7a806f8ecb0aeebe343788bd4b74a409664c",
+          "size": 2213
         },
         {
           "path": "quota_context.py",
@@ -695,6 +700,11 @@
           "path": "test_bars.py",
           "sha256": "87d109aeb7af9ea272af8f72911e5e0514f8a1b5c13968653cdcea0169b6f2ad",
           "size": 16053
+        },
+        {
+          "path": "test_chip.py",
+          "sha256": "c2e89e8ad4e8b487330cff5867accefcc91577742c34f27e5488d0912f713c2d",
+          "size": 2779
         },
         {
           "path": "test_clarity.py",
@@ -835,7 +845,7 @@
       "name": "claudexor_quotas",
       "slug": "claudexor_quotas",
       "type": "extension",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "when_to_use": "The owner wants quota windows, resets and remaining reserve of the authorized Claudexor accounts; or, before choosing executors, the model wants measured reserve by family and limit. Advisory only: never a dispatch guarantee or a pin change."
     },
     {
@@ -2104,8 +2114,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "eb8a629b57a9520c513f3bb26a8afab60f795ebb64b55d774107e199b382698c",
-          "size": 23179
+          "sha256": "900f3db11a8e120b6bcb9843e86c757f42b393a18e62415c202d7facc89091f5",
+          "size": 24099
         },
         {
           "path": "lists_core.py",
@@ -2114,8 +2124,13 @@
         },
         {
           "path": "plugin.py",
-          "sha256": "e5f082424eaee3914083612e06663321a3bbab2441f51a5e1f609b737f37ff7f",
-          "size": 35882
+          "sha256": "d32e0e6a5f6b83a63e676068ea981d82ac7f28f34e75974b27d68f9f180f30e9",
+          "size": 37401
+        },
+        {
+          "path": "tests/test_capture_route.py",
+          "sha256": "3825796c7f9307d71707277b44d1d8b0c536ebb8ac68def7bb98bc742f158be3",
+          "size": 2480
         },
         {
           "path": "tests/test_read_tree_budget.py",
@@ -2124,8 +2139,8 @@
         },
         {
           "path": "tests/test_smart_lists.py",
-          "sha256": "c651b68db987bd5f7ad4b921b2e76b48b6004196e760ba0573013fa9e2c6d4a4",
-          "size": 119818
+          "sha256": "560b89223608bc49972d0526906f0695f6447e9238f6b83892b540fe55186143",
+          "size": 120083
         },
         {
           "path": "widget.js",
@@ -2136,7 +2151,7 @@
       "name": "smart_lists",
       "slug": "smart_lists",
       "type": "extension",
-      "version": "0.3.5"
+      "version": "0.4.0"
     },
     {
       "description": "Inspect, filter, sort, group, and aggregate CSV and XLSX tables while reporting truncation and non-numeric values honestly.",
@@ -2333,8 +2348,8 @@
         },
         {
           "path": "SKILL.md",
-          "sha256": "1a88755075c0708ccc8c92310ce6b64785a2760703357bb87980bf21bdf2f7e3",
-          "size": 4724
+          "sha256": "ea00a97040efa5abe771f329d97e2349531d3d5ba91190f2ac5f908f03336773",
+          "size": 5261
         },
         {
           "path": "accounting.py",
@@ -2353,8 +2368,8 @@
         },
         {
           "path": "plugin.py",
-          "sha256": "a20b506eea7b25ea301ac9fd198138ccc883e45ab05192118365c2b477d73e45",
-          "size": 12321
+          "sha256": "b4bed038aa34be114dae53a266a05dcb35fe7d3784a60d1cb3b47305e02c899f",
+          "size": 14075
         },
         {
           "path": "tests/oracle.py",
@@ -2367,14 +2382,19 @@
           "size": 24745
         },
         {
+          "path": "tests/test_chip.py",
+          "sha256": "4ec125d0d1b352d74c54ccc50f669a12c00b1cbe696d0dbe18da56e68c36d072",
+          "size": 2328
+        },
+        {
           "path": "tests/test_ingestion.py",
-          "sha256": "e45537561b5d2083f02c878f2462a7e4b3b7c03edb05f1f745e988cfd6e76f29",
-          "size": 19679
+          "sha256": "85840a79a9796ba556506b2d64bc4bd8e0491c60d7d3fee216154d45e5cd3af8",
+          "size": 19665
         },
         {
           "path": "tests/test_plugin.py",
-          "sha256": "d5a65ccdeccae06a70f6bdd823ef4461e94e2dfd788b618dfb098f8077d63f07",
-          "size": 25301
+          "sha256": "3a69265b6c2d334bdd6bafb23bf69a92e3f6fe285a5ff7470219b33eeffd7e63",
+          "size": 25416
         },
         {
           "path": "tests/widget_contract.cjs",
@@ -2390,7 +2410,7 @@
       "name": "token-usage",
       "slug": "token-usage",
       "type": "extension",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "when_to_use": "Inspect token usage across Ouroboros models, harnesses, projects and tasks over the retained history."
     },
     {
@@ -2523,6 +2543,51 @@
       "type": "extension",
       "version": "0.3.2",
       "when_to_use": "User asks about weather, temperature, forecast, current conditions, wind, humidity, sunrise/sunset, or a weather dashboard for a city."
+    },
+    {
+      "description": "Optional local Whisper voice input for an editable Ouroboros composer draft.",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "0b4195e92d5e5249c1829c781e0ce00f6bc528e29c1411d8fb7b9e5b731cc093",
+          "size": 4958
+        },
+        {
+          "path": "plugin.py",
+          "sha256": "5722d322d5c2b27a5906131ebbcfcc9d4b0b95488cb0cbe3e9ea13c470bc6474",
+          "size": 7411
+        },
+        {
+          "path": "scripts/companion.py",
+          "sha256": "671bb1e5efaf0d6850b179663044420eb1a1f76d616f0b60854419daa4a9bed7",
+          "size": 12273
+        },
+        {
+          "path": "tests/test_voice.py",
+          "sha256": "e023d89fec3369ba21c99d8e28626d921259d3c25eb8fe6c0ce897142caddc36",
+          "size": 15333
+        },
+        {
+          "path": "whisper_runtime.py",
+          "sha256": "d55ee18ffe57174fd3d9eacf237f88ac489ec4f86bde9a7397f840475629bb57",
+          "size": 5402
+        }
+      ],
+      "install_specs": [
+        {
+          "kind": "pip",
+          "package": "faster-whisper==1.2.1"
+        },
+        {
+          "kind": "pip",
+          "package": "av>=17.1.0,<19"
+        }
+      ],
+      "name": "whisper-voice",
+      "slug": "whisper-voice",
+      "type": "extension",
+      "version": "0.2.0",
+      "when_to_use": "The owner explicitly enables optional local voice input in the composer."
     },
     {
       "author": "kuznetsoffandrey",
