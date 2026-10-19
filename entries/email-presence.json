@@ -3,7 +3,7 @@
     "messaging"
   ],
   "description": "Bidirectional email Presence transport with IMAP polling, durable delivery, and RFC 5322 reply threading.",
-  "digest": "b836c567c2ecdc301c0e9adc9900f21b23f908ae708f41571fb841c5a329cc92",
+  "digest": "6874bfae18afd0b88febc3292fe6a125cd2241f5e3b46a1392ad23e793848f99",
   "install_specs": [
     "httpx",
     "starlette"
@@ -16,6 +16,6 @@
     "path": "skills/email-presence"
   },
   "type": "extension",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "withdrawn": null
 }
