@@ -98,7 +98,7 @@ identity along with code and instructions.
 3. Generate its manifest fields and digest, then validate the catalog:
 
    ```bash
-   python -m pip install PyYAML pytest
+   python -m pip install PyYAML pytest httpx starlette
    python scripts/build_index.py --refresh example_skill
    python scripts/build_index.py
    python scripts/build_index.py --check

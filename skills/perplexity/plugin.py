@@ -151,6 +151,8 @@ async def _route_research(request: Request) -> JSONResponse:
     if not isinstance(body, dict):
         return JSONResponse({"error": "body must be a JSON object"}, status_code=400)
     value = body.get("max_results", _DEFAULT_MAX_RESULTS)
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
     if value is not None and (isinstance(value, bool) or not isinstance(value, (str, int))):
         return JSONResponse({"error": "max_results must be an integer"}, status_code=400)
     try:

@@ -101,7 +101,9 @@ class PerplexityInputTests(unittest.IsolatedAsyncioTestCase):
         inputs = [({}, 5), ({"max_results": ""}, 5), ({"max_results": None}, 5),
                   ({"max_results": 0}, 5), ({"max_results": "0"}, 5),
                   ({"max_results": " 12 "}, 12), ({"max_results": 3}, 3),
-                  ({"max_results": -10}, 1), ({"max_results": "999"}, 25)]
+                  ({"max_results": -10}, 1), ({"max_results": "999"}, 25),
+                  ({"max_results": 5.0}, 5), ({"max_results": 1e1}, 10),
+                  ({"max_results": 0.0}, 5), ({"max_results": -10.0}, 1)]
         for fields, expected in inputs:
             with self.subTest(fields=fields):
                 response = await self.client.post("/research", json={"query": "test", **fields})
