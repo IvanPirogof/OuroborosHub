@@ -76,7 +76,7 @@ class PresenceWorkResult:
     text: str = ""
     work_ref: str = ""
     delivery_reporting_version: int = 0
-    # An unresolved observation: the retained code and any admitted child it names.
+    # Any view may name admitted child work; an older Host's unresolved view also names its code.
     code: str = ""
     child_work_ref: str = ""
     outputs: tuple[Dict[str, Any], ...] = ()
@@ -254,13 +254,14 @@ class PresenceHostClient:
         )
         status = str(response.get("status") or "")
         outputs = _selected_outputs(response)
+        child = _child_ref(response, str(work_ref))
         if status == "pending":
-            return PresenceWorkResult(status=status, work_ref=str(work_ref), outputs=outputs)
+            return PresenceWorkResult(status=status, work_ref=str(work_ref), child_work_ref=child, outputs=outputs)
         if status == "unresolved":
-            # No canonical answer yet: an observation, never an outcome or a verdict.
+            # An older Host without a canonical answer yet: an observation, never an outcome or a verdict.
             return PresenceWorkResult(status=status, work_ref=str(work_ref),
                                       code=str(response.get("code") or ""),
-                                      child_work_ref=_child_ref(response, str(work_ref)), outputs=outputs)
+                                      child_work_ref=child, outputs=outputs)
         if status not in _TERMINAL_WORK_STATES:
             raise PresenceHostError("presence Host returned an invalid work status")
         outcome = str(response.get("outcome") or "")
@@ -275,7 +276,7 @@ class PresenceHostClient:
             text=str(response.get("text") or ""),
             work_ref=str(work_ref),
             delivery_reporting_version=int(response.get("delivery_reporting_version") == 1),
-            outputs=outputs, output_ref=str(response.get("output_ref") or ""),
+            child_work_ref=child, outputs=outputs, output_ref=str(response.get("output_ref") or ""),
         )
 
     def _headers(self) -> Dict[str, str]:
@@ -315,7 +316,7 @@ def _selected_outputs(response: Dict[str, Any]) -> tuple[Dict[str, Any], ...]:
 
 
 def _child_ref(response: Dict[str, Any], polled: str) -> str:
-    """Admitted child work named by an unresolved view; the original is never its own child."""
+    """Admitted child work named by any work view; the original is never its own child."""
     original = {polled, str(response.get("turn_ref") or "").strip()}
     for key in ("child_work_ref", "work_ref"):
         value = str(response.get(key) or "").strip()

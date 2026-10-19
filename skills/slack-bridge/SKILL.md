@@ -1,7 +1,7 @@
 ---
 name: slack-bridge
 description: Slack presence transport with durable delivery, directory discovery, provider updates, file transfer, message actions, and provider context.
-version: 1.6.1
+version: 1.6.2
 type: extension
 entry: plugin.py
 plugin_api: "2.0"
@@ -422,10 +422,11 @@ A Host may then answer while the author's result still waits for review:
 stores that write-once envelope as the event's Host reference; a retried event
 receives the identical stored envelope, never a rerun. Like deferred work, the
 event then only polls, so later messages in its thread are submitted meanwhile.
-If promotion happens on a later reentry, a pending, interrupted or terminal
-author poll can supply `child_work_ref`. The bridge checkpoints each discovered
-reference beside the initial envelope before polling it. After a restart, the
-child remains independently pollable even if the author is unavailable.
+If promotion happens on a later reentry, a pending or terminal author poll (or
+an older Host's `interrupted` one) can supply `child_work_ref`. The bridge
+checkpoints each discovered reference beside the initial envelope before polling
+it. After a restart, the child remains independently pollable even if the author
+is unavailable.
 The author and the child are polled concurrently through `/presence/work`.
 The existing inbound worker commits the initial selection before starting
 either poll, then commits each response's outputs as it arrives. A child
@@ -451,11 +452,13 @@ child's task) and names the carried `output_ref` in the report's `message`.
 Release to the bridge is not proof of Slack delivery; provider receipts keep
 that role.
 
-A positively lost author is `status: "unresolved"` with `disposition: "retained"`
-on the current Host. Its input is not resubmitted; the original and real children
-remain independently observed, including after a child finishes. Released outputs
-keep their identities. Older Hosts may return `interrupted`; that legacy shape
-ends the row `failed` after its children finish, preserving sent output.
+An author whose attempt ended without a canonical answer polls `failed`
+(`cancelled` when recorded so) with `outcome: "silent"` and its reason facts on
+the current Host. Its input is not resubmitted; real children remain
+independently observed after the author's reference ends. Released outputs keep
+their identities. Older Hosts may return `unresolved`, which stays observed, or
+`interrupted`, which ends the row `failed` after its children finish, preserving
+sent output.
 
 Older persisted `refused:` references keep their original refusal and any
 admitted child. New `rejected` responses retain their full receipt and end the
@@ -576,14 +579,19 @@ the original `turn_ref` and any real child `work_ref` independently. It never
 resubmits that retained event. A child finishing does not erase the original
 uncertainty or stop observation of its late selected output.
 
-A work view with `status: unresolved` remains observable. A failed task may
-still carry a selected answer; lifecycle status alone does not suppress speech.
-Canonical selected
-outputs keep their source and delivery identity across repeated polls and
-restarts; a retained receipt itself is never sent as speech. A recorded cancellation can remain under
-observation: it proves neither a live executor nor absence of external effects,
-and observation starts no new generation. This does not
-claim exactly-once provider delivery after ambiguous network acceptance.
+A work view answers `pending` while the turn's executor can still change it and
+is terminal once nothing can. A failed task may still carry a selected answer;
+lifecycle status alone does not suppress speech. A turn that ended without a
+canonical answer reads `failed` (`cancelled` when recorded so) with
+`outcome: "silent"`: nothing further to deliver from that reference. Its reason
+facts (`code`, `recorded_status`, `uncertainty`) prove neither delivery nor the
+absence of external effects, and observation starts no new generation. A real
+child keeps its own reference in `child_work_ref`, which any view may name, and
+is observed on its own. Older Hosts may still answer `unresolved`, which
+stays observable. Canonical selected outputs keep their source and delivery
+identity across repeated polls and restarts; a retained receipt itself is never
+sent as speech. This does not claim exactly-once provider delivery after
+ambiguous network acceptance.
 `rejected` ends an event-specific refusal; before-admission `retry` and `blocked`
 retain retry custody, including after account or binding repair. Missing or unknown typed
 dispositions stay retryable, even on HTTP 403/404. Full queue recovery requires

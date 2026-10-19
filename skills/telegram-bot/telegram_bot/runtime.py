@@ -298,14 +298,17 @@ class TelegramTransportRuntime:
             if result.outputs:
                 self.store.record_work_outputs(lease.work_ref, result.outputs)
             if result.terminal:
+                # A child first named by a terminal view is retained in the same commit
+                # that settles this reference, so it is still observed after a restart.
                 self.store.complete_work(
                     lease.work_ref,
                     status=result.status,
                     text=result.text if result.outcome in {"message", "deferred"} and not result.output_ref else "",
+                    child_ref=result.child_work_ref,
                 )
             elif result.status == "unresolved":
-                # No canonical answer yet: keep observing at the ordinary backoff
-                # pace, retaining any admitted child it names. Never a verdict.
+                # An older Host without a canonical answer yet: keep observing at the
+                # ordinary backoff pace, retaining any admitted child it names. Never a verdict.
                 self.store.release_work(
                     lease.work_ref,
                     reason=f"presence_work_unresolved: {result.code}",
@@ -317,6 +320,7 @@ class TelegramTransportRuntime:
                     lease.work_ref,
                     reason="presence_work_pending",
                     retry_after_sec=5.0,
+                    child_ref=result.child_work_ref,
                 )
             return True
         except asyncio.CancelledError:

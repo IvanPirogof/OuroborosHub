@@ -1,7 +1,7 @@
 ---
 name: email-presence
 description: Bidirectional email Presence transport with IMAP polling, durable delivery, and RFC 5322 reply threading.
-version: 0.4.0
+version: 0.4.1
 type: extension
 entry: plugin.py
 plugin_api: "2.0"
@@ -103,14 +103,19 @@ the original `turn_ref` and any real child `work_ref` independently. It never
 resubmits that retained event. A child finishing does not erase the original
 uncertainty or stop observation of its late selected output.
 
-A work view with `status: unresolved` remains observable. A failed task may
-still carry a selected answer; lifecycle status alone does not suppress speech.
-Canonical selected
-outputs keep their source and delivery identity across repeated polls and
-restarts; a retained receipt itself is never sent as speech. A recorded cancellation can remain under
-observation: it proves neither a live executor nor absence of external effects,
-and observation starts no new generation. This does not
-claim exactly-once provider delivery after ambiguous network acceptance.
+A work view answers `pending` while the turn's executor can still change it and
+is terminal once nothing can. A failed task may still carry a selected answer;
+lifecycle status alone does not suppress speech. A turn that ended without a
+canonical answer reads `failed` (`cancelled` when recorded so) with
+`outcome: "silent"`: nothing further to deliver from that reference. Its reason
+facts (`code`, `recorded_status`, `uncertainty`) prove neither delivery nor the
+absence of external effects, and observation starts no new generation. A real
+child keeps its own reference in `child_work_ref`, which any view may name, and
+is observed on its own. Older Hosts may still answer `unresolved`, which
+stays observable. Canonical selected outputs keep their source and delivery
+identity across repeated polls and restarts; a retained receipt itself is never
+sent as speech. This does not claim exactly-once provider delivery after
+ambiguous network acceptance.
 `rejected` ends an event-specific refusal; before-admission `retry` and `blocked`
 retain retry custody, including after account or binding repair. Missing or unknown typed
 dispositions stay retryable, even on HTTP 403/404. Full queue recovery requires
