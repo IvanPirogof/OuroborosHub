@@ -1,0 +1,28 @@
+{
+  "category": [
+    "media"
+  ],
+  "description": "Optional local Whisper voice input for an editable Ouroboros composer draft.",
+  "digest": "1332afeadb43bcfbe56b7d1a96993277e580f63c2c043aeafb99ccc9575d63c7",
+  "install_specs": [
+    {
+      "kind": "pip",
+      "package": "faster-whisper==1.2.1"
+    },
+    {
+      "kind": "pip",
+      "package": "av>=17.1.0,<19"
+    }
+  ],
+  "name": "whisper-voice",
+  "owner": "josephsteuerjr",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/whisper-voice"
+  },
+  "type": "extension",
+  "version": "0.2.0",
+  "when_to_use": "The owner explicitly enables optional local voice input in the composer.",
+  "withdrawn": null
+}
