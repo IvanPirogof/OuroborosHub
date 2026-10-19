@@ -643,23 +643,18 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "83a0da358c1ebbdd59d31b26a9d1c55c9aca552b49a950ce900fb633db3f202f",
-          "size": 78509
+          "sha256": "0dfd0a78f87c27d3fb9f82a87ff8f81e1c1a70222123049b41c6556d20783a06",
+          "size": 77744
         },
         {
           "path": "plugin.py",
-          "sha256": "05adffa1108c178506c685594ced4a0fcfa509fd30f038574f6d7528008c74a6",
-          "size": 96330
+          "sha256": "29e9db69a406b66f4339fcabd38238e8b0d737c8c7975875017a529389c02803",
+          "size": 96045
         },
         {
           "path": "quota_analytics.py",
           "sha256": "ba6f5cceea4003d6d9f5392f5e8792a8334d8ce46bda1aa24364a7219d378862",
           "size": 34158
-        },
-        {
-          "path": "quota_chip.py",
-          "sha256": "cc91359851dfe49c7857e99e33ba7a806f8ecb0aeebe343788bd4b74a409664c",
-          "size": 2213
         },
         {
           "path": "quota_context.py",
@@ -700,11 +695,6 @@
           "path": "test_bars.py",
           "sha256": "87d109aeb7af9ea272af8f72911e5e0514f8a1b5c13968653cdcea0169b6f2ad",
           "size": 16053
-        },
-        {
-          "path": "test_chip.py",
-          "sha256": "c2e89e8ad4e8b487330cff5867accefcc91577742c34f27e5488d0912f713c2d",
-          "size": 2779
         },
         {
           "path": "test_clarity.py",
@@ -845,7 +835,7 @@
       "name": "claudexor_quotas",
       "slug": "claudexor_quotas",
       "type": "extension",
-      "version": "0.12.0",
+      "version": "0.11.0",
       "when_to_use": "The owner wants quota windows, resets and remaining reserve of the authorized Claudexor accounts; or, before choosing executors, the model wants measured reserve by family and limit. Advisory only: never a dispatch guarantee or a pin change."
     },
     {
@@ -2343,8 +2333,8 @@
         },
         {
           "path": "SKILL.md",
-          "sha256": "ea00a97040efa5abe771f329d97e2349531d3d5ba91190f2ac5f908f03336773",
-          "size": 5261
+          "sha256": "1a88755075c0708ccc8c92310ce6b64785a2760703357bb87980bf21bdf2f7e3",
+          "size": 4724
         },
         {
           "path": "accounting.py",
@@ -2363,8 +2353,8 @@
         },
         {
           "path": "plugin.py",
-          "sha256": "b4bed038aa34be114dae53a266a05dcb35fe7d3784a60d1cb3b47305e02c899f",
-          "size": 14075
+          "sha256": "a20b506eea7b25ea301ac9fd198138ccc883e45ab05192118365c2b477d73e45",
+          "size": 12321
         },
         {
           "path": "tests/oracle.py",
@@ -2377,19 +2367,14 @@
           "size": 24745
         },
         {
-          "path": "tests/test_chip.py",
-          "sha256": "4ec125d0d1b352d74c54ccc50f669a12c00b1cbe696d0dbe18da56e68c36d072",
-          "size": 2328
-        },
-        {
           "path": "tests/test_ingestion.py",
-          "sha256": "85840a79a9796ba556506b2d64bc4bd8e0491c60d7d3fee216154d45e5cd3af8",
-          "size": 19665
+          "sha256": "e45537561b5d2083f02c878f2462a7e4b3b7c03edb05f1f745e988cfd6e76f29",
+          "size": 19679
         },
         {
           "path": "tests/test_plugin.py",
-          "sha256": "9e50dbd5182e0b194f694ae8ef66f5a1380136e2a8a53095dc68de4625ae438c",
-          "size": 25306
+          "sha256": "d5a65ccdeccae06a70f6bdd823ef4461e94e2dfd788b618dfb098f8077d63f07",
+          "size": 25301
         },
         {
           "path": "tests/widget_contract.cjs",
@@ -2405,7 +2390,7 @@
       "name": "token-usage",
       "slug": "token-usage",
       "type": "extension",
-      "version": "1.2.0",
+      "version": "1.1.1",
       "when_to_use": "Inspect token usage across Ouroboros models, harnesses, projects and tasks over the retained history."
     },
     {
