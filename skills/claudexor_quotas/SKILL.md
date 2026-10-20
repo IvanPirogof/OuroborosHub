@@ -1,7 +1,7 @@
 ---
 name: claudexor_quotas
 description: "Claudexor quota dashboard and read-only quota_summary: sorted account bars, per-window and calibrated joint timelines, reported resets, measured pace, dated account resources and reversible row visibility. The optional granted context snapshot supplies the same figures at eligible host context tails; no routing, account changes or automatic provider refresh."
-version: 0.12.0
+version: 0.12.1
 type: extension
 runtime: python3
 entry: plugin.py
@@ -33,7 +33,7 @@ ui_tab:
     start: auto
 ---
 
-# Claudexor Quotas (v0.12.0)
+# Claudexor Quotas (v0.12.1)
 
 The composer quota chip opens this widget. `GET chip` uses the same passive
 cached read as `quotas?reuse=1&chart=0`; it never requests provider refresh.
@@ -75,6 +75,17 @@ it (`api.get_state_dir()`):
 - `quota_collector.lock` — an empty lease file, never removed while the skill
   runs. Its OS lock serializes collector cycles across unload/reload; it holds
   no account or quota data. SQLite may also keep its standard WAL/SHM files.
+
+## What changed in 0.12.1
+
+- **A steady snapshot text.** The context snapshot changes only when a printed
+  fact changes. A current resource reading carries no observation time (the
+  snapshot envelope dates the text), so equal current facts fold into one
+  counted line; a last-known reading keeps its date. Measured pace and the
+  conditional account-hours print at one decimal like the other derived
+  figures (a positive value below that resolution is never 0), and reported
+  instants print to the nearest second; validity still uses the exact reset.
+  Before this, every two-minute sweep rewrote the whole note.
 
 ## What changed in 0.11.0
 
@@ -140,7 +151,8 @@ it (`api.get_state_dir()`):
   offer a separate ungranted widget-only mode. After a successful sweep the collector writes
   `context-snapshot.json` (`schema_version`, `observed_at`, `valid_until`,
   `text`) — the tool's own figures as one deterministic text; derived
-  figures are printed at calibration resolution (≈), resets exactly. An
+  figures are printed at calibration resolution (≈, one decimal), reported
+  instants to the nearest second, current readings without a poll time. An
   unchanged text is not rewritten until its validity nears its end; a failed
   sweep writes nothing, so the file expires. Validity is at most 420 seconds
   after the successful read and never beyond the exact earliest reported quota
@@ -150,7 +162,7 @@ it (`api.get_state_dir()`):
   existing timestamp parser handles fractional ISO instants consistently.
   A passed reset cannot renew a fresh claim. Stop is checked after computation
   and before atomic publication admission. The compact text includes numeric measured pace in account-windows/h
-  with its measured cohort, coverage, and individually dated resources; a family
+  with its measured cohort, coverage, and resources (last-known ones dated); a family
   with resources but no quota window is still shown, never inferred available.
   Positive sub-hour conditional work is not rounded to zero. The default text
   bound is 12,000 characters, not 2,400; any omitted lines name their families
