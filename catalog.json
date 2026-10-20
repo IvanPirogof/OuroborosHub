@@ -1,7 +1,7 @@
 {
   "description": "Official Ouroboros skills catalog.",
   "name": "OuroborosHub",
-  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/c367088e1f4f3a8c855ffabd0827c8509f2cfdb7",
+  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/8c13ebb8537ff4001961ddfec5259870973f397f",
   "schema_version": 1,
   "skills": [
     {
@@ -1677,19 +1677,19 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "cea1db68e9606a6ccc8225928e091b12c9dd5aff3fa85164852e203058bc82a1",
-          "size": 2143
+          "sha256": "03c8177e32c0ad0b470b973048501807ecab2cc85aa72ca80ab9b9a2982f1e93",
+          "size": 2389
         },
         {
           "path": "plugin.py",
-          "sha256": "0cd2050169a15eddde78185a3f97828f9a841b683be0cabe9093c332593813f4",
-          "size": 8682
+          "sha256": "7764ed98ef8a068bf2ae5305419d6532dd64eed674b7806c49210bafde179ee9",
+          "size": 9213
         }
       ],
       "name": "perplexity",
       "slug": "perplexity",
       "type": "extension",
-      "version": "0.1.1"
+      "version": "0.1.2"
     },
     {
       "description": "Оркестратор автоматического бронирования ресторанов: нормализует список ресторанов, формирует задачу для агента-исполнителя и валидирует результат.",
