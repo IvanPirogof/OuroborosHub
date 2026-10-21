@@ -20,6 +20,10 @@ from .host import PresenceHostHTTPError, PresenceSubmission, PresenceWorkResult
 _MAX_OUTBOX_ATTEMPTS = 5
 
 
+class PlaceHeld(RuntimeError):
+    """Unsent custody waits for the current place policy, without a provider failure."""
+
+
 class PresenceSubmitter(Protocol):
     """The frozen provider-to-Host contract used by the runtime."""
 
@@ -55,6 +59,7 @@ class TelegramTransportRuntime:
         self._client_lock: Optional[asyncio.Lock] = None
         self._run_task: Optional[asyncio.Task[Any]] = None
         self._bot_id = ""
+        self._bot_username = ""
         self._bot_label = "not connected"
         self._runtime_state = "not_started"
         self._last_error = ""
@@ -120,6 +125,9 @@ class TelegramTransportRuntime:
                     await self._pause(5.0)
                     continue
                 self._runtime_state = "polling"
+                discover = getattr(self.submitter, "discover_delivery_support", None)
+                if discover:
+                    await discover()
                 updates = await client.get_updates(
                     offset=self.store.telegram_offset(), timeout_sec=25
                 )
@@ -131,6 +139,8 @@ class TelegramTransportRuntime:
                         update,
                         bot_account_id=self._bot_id,
                         management_group_id=self._management_group_id(),
+                        places=bool(getattr(self.submitter, "places_version", 0)),
+                        bot_username=self._bot_username,
                     )
                     self.store.commit_update(update_id, event)
                 backoff = 2.0
@@ -176,6 +186,7 @@ class TelegramTransportRuntime:
             identity = await client.get_me()
             self._bot_id = str(identity.get("id") or "unknown")
             username = str(identity.get("username") or "").strip()
+            self._bot_username = username
             self._bot_label = f"@{username}" if username else self._bot_id
             self._client = client
             self._client_token = token
@@ -385,8 +396,18 @@ class TelegramTransportRuntime:
                 reporting["account_id"] = self._bot_id
             lease = replace(lease, payload={**lease.payload, "_reporting": reporting})
             self.store.checkpoint_outbox(lease.delivery_id, lease.payload)
-            receipt = await _deliver(client, lease, self.store)
+            async def before_send():
+                check = getattr(self.submitter, "place_hold", None)
+                if check:
+                    reason = await check(self._bot_id, str(lease.payload.get("chat_id") or ""))
+                    if reason:
+                        raise PlaceHeld(reason)
+
+            receipt = await _deliver(client, lease, self.store, before_send=before_send)
             self.store.mark_delivered(lease.delivery_id, provider_receipt=receipt)
+            return True
+        except PlaceHeld as exc:
+            self.store.hold_outbox(lease.delivery_id, str(exc))
             return True
         except asyncio.CancelledError:
             self.store.release_outbox(
@@ -436,7 +457,7 @@ class TelegramTransportRuntime:
 
 
 async def _deliver(
-    client: TelegramClient, lease: OutboxLease, store: CustodyStore
+    client: TelegramClient, lease: OutboxLease, store: CustodyStore, *, before_send=None,
 ) -> Dict[str, Any]:
     payload = lease.payload
     kind = str(payload.get("kind") or "message")
@@ -466,6 +487,8 @@ async def _deliver(
             store.checkpoint_outbox(lease.delivery_id, payload)
         for index in range(len(messages), len(chunks)):
             chunk = chunks[index]
+            if before_send:
+                await before_send()
             result = await client.send_text_chunk(
                 chat_id,
                 chunk["text"],
@@ -481,6 +504,8 @@ async def _deliver(
             )
         return {"kind": kind, "messages": messages}
     if kind == "moderation":
+        if before_send:
+            await before_send()
         result = await client.moderate(
             str(payload["action"]), dict(payload["parameters"])
         )
@@ -492,6 +517,8 @@ async def _deliver(
             raise ValueError("Telegram operation parameters are required")
         if "_operation_result" in payload:
             return {"kind": kind, "method": method, "result": payload["_operation_result"]}
+        if before_send:
+            await before_send()
         result = await client.operation(method, dict(parameters))
         report = delivery_report(
             lease.delivery_id, payload, part_id="0", state="delivered",
@@ -515,6 +542,8 @@ async def _deliver(
         store.checkpoint_outbox(
             lease.delivery_id, {**payload, "_rendered_caption": caption}
         )
+    if before_send:
+        await before_send()
     result = await client.send_media(
         kind,
         chat_id,
