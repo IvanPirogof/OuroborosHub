@@ -1,0 +1,28 @@
+{
+  "category": [
+    "documents"
+  ],
+  "description": "Read Word, PowerPoint, Excel, legacy XLS, CSV, HTML and Outlook MSG files as one Markdown text, and create new XLSX workbooks.",
+  "digest": "77075a52115aeed5c5c9a4804828b2ccb517bd6287105e4d4a2bd1b7b74a4b56",
+  "install_specs": [
+    {
+      "kind": "pip",
+      "package": "markitdown[docx,pptx,xlsx,xls,outlook]"
+    },
+    {
+      "kind": "pip",
+      "package": "openpyxl"
+    }
+  ],
+  "name": "office_reader",
+  "owner": "kazzand",
+  "schema_version": 2,
+  "source": {
+    "kind": "hosted",
+    "path": "skills/office_reader"
+  },
+  "type": "extension",
+  "version": "0.1.0",
+  "when_to_use": "The user points at a .pptx, .xls, .html or Outlook .msg file, or wants any office file (.docx, .xlsx, .csv included) as one Markdown text to read, quote or summarize, or asks for a new Excel workbook built from data you already have. For heading-aware DOCX work or DOCX creation use word_tools; for filtering, grouping or aggregating a table use table_tools; for PDF use pdf_tools.",
+  "withdrawn": null
+}

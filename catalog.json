@@ -1,7 +1,7 @@
 {
   "description": "Official Ouroboros skills catalog.",
   "name": "OuroborosHub",
-  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/8c13ebb8537ff4001961ddfec5259870973f397f",
+  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/main",
   "schema_version": 1,
   "skills": [
     {
@@ -1628,6 +1628,41 @@
       "when_to_use": "User wants to generate or render an image from a text description, right now, inside the web UI. Also saves the image to disk so it can be downloaded."
     },
     {
+      "description": "Read Word, PowerPoint, Excel, legacy XLS, CSV, HTML and Outlook MSG files as one Markdown text, and create new XLSX workbooks.",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "7d4d2ce0b79981e3a4cb06ed48698f495c98fdd5b7f8c631972fc0fd86088cf8",
+          "size": 7277
+        },
+        {
+          "path": "plugin.py",
+          "sha256": "394ba106189670cbeccb44452349b3c5b6789371a40e216effacac0a5ef1c276",
+          "size": 30758
+        },
+        {
+          "path": "tests/test_office_reader.py",
+          "sha256": "2181037a0bedda2990222b2db893f52238e79ac7a50226da53db743fe76ffe1a",
+          "size": 28891
+        }
+      ],
+      "install_specs": [
+        {
+          "kind": "pip",
+          "package": "markitdown[docx,pptx,xlsx,xls,outlook]"
+        },
+        {
+          "kind": "pip",
+          "package": "openpyxl"
+        }
+      ],
+      "name": "office_reader",
+      "slug": "office_reader",
+      "type": "extension",
+      "version": "0.1.0",
+      "when_to_use": "The user points at a .pptx, .xls, .html or Outlook .msg file, or wants any office file (.docx, .xlsx, .csv included) as one Markdown text to read, quote or summarize, or asks for a new Excel workbook built from data you already have. For heading-aware DOCX work or DOCX creation use word_tools; for filtering, grouping or aggregating a table use table_tools; for PDF use pdf_tools."
+    },
+    {
       "description": "Read PDF documents page by page and build new PDF files from text or structured answers with Unicode-capable fonts.",
       "files": [
         {
@@ -1865,6 +1900,52 @@
       "type": "extension",
       "version": "0.5.7",
       "when_to_use": "The owner asks about their own medical data — check a new prescription as a second opinion (pharmacogenetics, interactions with the current regimen, monitoring labs), review laboratory results and trends, look up a locus or clinically significant ClinVar findings in their VCF, polygenic scores, longevity findings, sleep and lifestyle metrics, movement toward a health goal, which tests to take next, or a pre-visit summary."
+    },
+    {
+      "description": "Search scholarly literature, preprints and open-access copies across public APIs, resolve a work by identifier, and read citation counts and links.",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "51edebce9053c9dbc5fd65a83928231770e7d2f4ee9235423f85934fec2f5574",
+          "size": 8220
+        },
+        {
+          "path": "plugin.py",
+          "sha256": "0eff263303523b72e869a4ed00b8c8c1cef3fcb9426f99e45cc06625f5db59e2",
+          "size": 22086
+        },
+        {
+          "path": "providers.py",
+          "sha256": "e7f51c8a9aa50277e8993422a44389f81f2da3e7ab31dc8e73320baa4fff7171",
+          "size": 25585
+        },
+        {
+          "path": "tests/test_science_search.py",
+          "sha256": "7f8aa533991ad59b491f00c80e5d7ec2c073bd08e8153603b29bbad5f2642ddd",
+          "size": 43607
+        },
+        {
+          "path": "tests/test_throttle.py",
+          "sha256": "a279842e9c0a04d6ee759b9ee62db4f2faae78ff40bd2aa3c895333e0403b8ba",
+          "size": 3472
+        },
+        {
+          "path": "transport.py",
+          "sha256": "ed3a4aabaaa8eafd0c5892cf7369ac42985397a1256a44c6f2031bfce5619691",
+          "size": 13196
+        }
+      ],
+      "install_specs": [
+        {
+          "kind": "pip",
+          "package": "httpx"
+        }
+      ],
+      "name": "science_search",
+      "slug": "science_search",
+      "type": "extension",
+      "version": "0.1.0",
+      "when_to_use": "The user asks for papers, studies, preprints or open-access PDFs on a topic, wants a reference resolved from a DOI, PMID, PMCID, arXiv id or OpenAlex id, or asks how often a paper is cited and by whom. Not for general web search."
     },
     {
       "description": "Bidirectional Slack presence transport for Ouroboros using Socket Mode, durable delivery queues, threaded replies, proactive text messages, and inbound file staging.",
