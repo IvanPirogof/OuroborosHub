@@ -127,10 +127,38 @@ class IndexTests(unittest.TestCase):
         self.write('entries/duplicate.json', self.entry)
         with self.assertRaises(ValueError):
             builder.load_hub(self.root)
+
         (self.root / 'entries/duplicate.json').unlink()
         (self.root / 'entries/demo.json').rename(self.root / 'entries/wrong.json')
         with self.assertRaisesRegex(ValueError, 'filename'):
             builder.load_hub(self.root)
+
+    def test_connector_metadata_refresh_validation_and_legacy_projection(self):
+        manifest = self.root / 'skills/demo/SKILL.md'
+        manifest.write_text('---\nversion: v2\nicon: ui/icon.svg\ncontributes:\n'
+                            '  - {id: slack, provides: place, destination: "vendor:Slack"}\n'
+                            '  - {id: mic, provides: stt, destination: "vendor:Speech"}\n---\n', encoding='utf-8')
+        self.assertEqual(builder.main(['--refresh', 'demo'], root=self.root), 0)
+        entry = builder.read_json(self.root / 'entries/demo.json')
+        self.assertEqual((entry['icon'], entry['connects']), ('ui/icon.svg', ['Slack']))
+        builder.validate_entry(entry, {'search'})
+        catalog = builder.build_catalog(self.root)
+        self.assertEqual(catalog['schema_version'], 1)
+        self.assertEqual(catalog['skills'][0]['connects'], ['Slack'])
+        for changes in ({'icon': '../bad.svg'}, {'icon': 'https://bad/icon.svg'},
+                        {'connects': 'Slack'}, {'connects': ['Slack', 'Slack']}, {'connects': [None]}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                builder.validate_entry({**entry, **changes}, {'search'})
+        self.write('entries/demo.json', {**entry, 'connects': ['Other']})
+        with self.assertRaisesRegex(ValueError, 'must derive'):
+            builder.build_catalog(self.root)
+        # An old publisher may omit the new keys; consumers still get derived facts.
+        self.write('entries/demo.json', {k: v for k, v in entry.items() if k not in {'connects', 'icon'}})
+        self.assertEqual(builder.build_catalog(self.root)['skills'][0]['connects'], ['Slack'])
+        manifest.write_text('---\nversion: v3\n---\n', encoding='utf-8')
+        self.assertEqual(builder.main(['--refresh', 'demo'], root=self.root), 0)
+        self.assertNotIn('connects', builder.read_json(self.root / 'entries/demo.json'))
+        self.assertNotIn('icon', builder.build_catalog(self.root)['skills'][0])
 
     def test_endorsements_bind_exact_release_and_recommendations_are_boolean(self):
         endorsement = {'name': 'demo', 'digest': self.entry['digest'], 'recommended': True}
