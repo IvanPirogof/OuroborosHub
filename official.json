@@ -1,7 +1,7 @@
 {
   "endorsements": [
     {
-      "digest": "16fdc08dd0cf84a0c1986f7908500116dfab010fde204a0e1bf4427d99235fe9",
+      "digest": "8ded2740818b0f4c288e87a6a3c847a43ecec3eed3d3b66b78f6f288d30bf3ca",
       "name": "a2a",
       "recommended": false
     },
@@ -46,7 +46,7 @@
       "recommended": false
     },
     {
-      "digest": "6874bfae18afd0b88febc3292fe6a125cd2241f5e3b46a1392ad23e793848f99",
+      "digest": "830bfc6494d6d3ef3a8b6d99210d67034d84cd551c7bfa7283d359f421d9ea32",
       "name": "email-presence",
       "recommended": false
     },
@@ -76,12 +76,12 @@
       "recommended": false
     },
     {
-      "digest": "cbacc5b5ef307b458fc30511c39ceb021c20756fe7ef751321e33fcb5fee7eae",
+      "digest": "e49b193556f65a2cd972ad45f194f544bea2618be4098e9388fcf068dbabf989",
       "name": "slack-bridge",
       "recommended": false
     },
     {
-      "digest": "fa3b3af43f738facafb388925612d87f05900d593e637fc8556c664e0b7b2773",
+      "digest": "9e258b56d390786a5ac0fd68120af0b270b684d402a51068b99eab9ed058e90c",
       "name": "telegram-bot",
       "recommended": false
     },

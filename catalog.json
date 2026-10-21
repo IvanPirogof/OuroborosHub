@@ -1,7 +1,7 @@
 {
   "description": "Official Ouroboros skills catalog.",
   "name": "OuroborosHub",
-  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/8c13ebb8537ff4001961ddfec5259870973f397f",
+  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/c2157f081bf6628d59f7357d604d4f0e4dc37666",
   "schema_version": 1,
   "skills": [
     {
@@ -30,12 +30,15 @@
       "when_to_use": "Геозадачи через 2ГИС: поиск организаций и мест, адрес↔координаты, маршруты, изохроны, статические карты. НЕ для: поиска готовых изображений в интернете, GPS-трекинга, бронирования, отзывов о местах (2ГИС не отдаёт отзывы через эти API). Для поиска по миру вне зоны покрытия 2ГИС используй другие инструменты."
     },
     {
-      "description": "Agent-to-Agent protocol bridge for Ouroboros. Provides a local A2A-compatible server plus client tools for discovering and messaging other A2A agents.",
+      "connects": [
+        "A2A"
+      ],
+      "description": "Agent-to-Agent connector for peer places, with durable Presence requests, discovery, streaming status and retained task outcomes.",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "fbb16e5c4486429950a0bf1b4157f236846cb757bb44e891793d061f1cd50d44",
-          "size": 8152
+          "sha256": "fa0940646cddbc63005c5ce59f4fc68c1a418c1d22b8da30d57fac71a494166e",
+          "size": 5826
         },
         {
           "path": "lib/client.py",
@@ -44,17 +47,22 @@
         },
         {
           "path": "plugin.py",
-          "sha256": "69f25d60971b39b93955ea23bd75f3e3aa5ec278b2c0062d9bb33caa0212b3d1",
-          "size": 4990
+          "sha256": "c7808c8aae9b42cef310517f5a93f77c540ce1cf90ede5d8a6cf87ca7176372f",
+          "size": 4808
         },
         {
           "path": "scripts/a2a_daemon.py",
-          "sha256": "797ddf111123bd60c19d8df9e9f8e226c238b29a3f232629bcfa83930274c37c",
-          "size": 76355
+          "sha256": "11bdf6683b75078e7b9e30fe12be69f14e80706ad2c29e542e4f2dabfac44280",
+          "size": 66465
+        },
+        {
+          "path": "scripts/a2a_presence.py",
+          "sha256": "da5f4dda51dadea8527e4585cc86943929b9e30cce532ea51ae8e530eaf2091d",
+          "size": 8017
         },
         {
           "path": "tests/test_a2a_agent_card.py",
-          "sha256": "0e89a8e5c2e3df8e3a13fd165f1898e2fde8b24df47e9e13a6fda50c8987f703",
+          "sha256": "a0da576c9eacd494b87ea2b12f6f53819a9f371ff207d92ef84a01856314e924",
           "size": 10068
         },
         {
@@ -64,13 +72,13 @@
         },
         {
           "path": "tests/test_a2a_daemon_safety.py",
-          "sha256": "a32e9fa5d067f2b098b736b72b21858d1a37a4ef7aaedca518e24fe48fc0b23e",
-          "size": 16171
+          "sha256": "813f87f717419576ec24eec00bfd029f420e5c0a4e1defb25055c0e85f3259b4",
+          "size": 9573
         },
         {
           "path": "tests/test_a2a_operation_ownership.py",
-          "sha256": "aef9914129f0b2f3ee1d011a67c1c9c17e362a65a9eedf665e8e3b0b291ae7d0",
-          "size": 34919
+          "sha256": "9b8cc501d60f87e94e76bac338f738b406237421cd4d7ada89e724c2ddaf63e2",
+          "size": 18079
         },
         {
           "path": "tests/test_a2a_sdk_card_shape.py",
@@ -79,10 +87,16 @@
         },
         {
           "path": "tests/test_a2a_stream_dispatch.py",
-          "sha256": "dd06f713984dffd9e0a91fc59596485be5842fb188d17ffcab5284b781b1c021",
-          "size": 13579
+          "sha256": "3db00d6a9aa8bdf18197468b75c52d56214109c779213751c1c4040b113057ff",
+          "size": 5496
+        },
+        {
+          "path": "ui/icon.svg",
+          "sha256": "37055f8011200edc11dfeabcad339f6c5d74ade0df716f63628999e647541b17",
+          "size": 252
         }
       ],
+      "icon": "ui/icon.svg",
       "install_specs": [
         {
           "kind": "pip",
@@ -96,7 +110,7 @@
       "name": "a2a",
       "slug": "a2a",
       "type": "extension",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "when_to_use": "User asks to communicate with another A2A-compatible agent, discover an agent card, send an A2A message, check A2A task status, or expose this Ouroboros instance as an A2A peer."
     },
     {
@@ -115,28 +129,47 @@
       "when_to_use": "Review external code changes, assess a project or library for adoption, or check research and analysis code, including folders without Git."
     },
     {
-      "description": "AgentRQ integration: structured HITL task board, permission gating, and real-time workspace bridge via MCP Streamable HTTP",
+      "connects": [
+        "AgentRQ"
+      ],
+      "description": "AgentRQ workspace connector for task places, human replies and agent requests, with durable Presence receipts and task delivery.",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "d6bb32085b74866ccb8ce17e8163a46de52254d8ad880c0224122330fdc56246",
-          "size": 3258
+          "sha256": "b8cc26767a7d3a34eb25268e2be5323d14e6f8ffd52b0f808c1f2461cd6d52b7",
+          "size": 4730
         },
         {
           "path": "listener.py",
-          "sha256": "06da0a02d2ac1ef74e03bc3b6062f7130c11f01c85103f25166d13956873fd71",
-          "size": 16538
+          "sha256": "1880c043b35fc13b60ec585bfa633efea1be554134376977f8cff675bb53d6c9",
+          "size": 11470
         },
         {
           "path": "plugin.py",
-          "sha256": "0a7119ef358407c94723ecc67a06aba64ffb45f718e44f630ac57c0eff019050",
+          "sha256": "e0c36a9e8a2bde9409aaa2f60ec6e8af349b00b2eefca373c3351b1b95f8c687",
           "size": 16606
+        },
+        {
+          "path": "presence.py",
+          "sha256": "da3f819c79778493e97d84cfaace090f5023bb4b8204b5e5f14182d119ac924a",
+          "size": 7240
+        },
+        {
+          "path": "tests/test_presence.py",
+          "sha256": "8e7be00257ea98e68814dcaeea25b0df57b428a60276807daf49c8371e545e67",
+          "size": 4360
+        },
+        {
+          "path": "ui/icon.svg",
+          "sha256": "606a86e004cc635c3c8e55bddbc8f6c1d1d674b97a5e4b11536ed45eb7741c3a",
+          "size": 259
         }
       ],
+      "icon": "ui/icon.svg",
       "name": "agentrq-bridge",
       "slug": "agentrq-bridge",
       "type": "extension",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "when_to_use": "User wants to interact with an AgentRQ workspace: pull tasks, create tasks for human review, reply to task threads, update task status, or request human permission for sensitive actions."
     },
     {
@@ -1033,12 +1066,15 @@
       "when_to_use": "When the user wants to list unread emails, read email message contents, compose and send emails via standard IMAP/SMTP protocols, or test email server connectivity."
     },
     {
-      "description": "Bidirectional email Presence transport with IMAP polling, durable delivery, and RFC 5322 reply threading.",
+      "connects": [
+        "Email"
+      ],
+      "description": "Email connector for IMAP/SMTP places, with threaded conversations, durable receipts and attachments, and live place-state delivery holds.",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "c6499f55c23a7cdda543859d927ea856d62a2f9c3c5df5cf4c83127a62665682",
-          "size": 11008
+          "sha256": "d49815594955f7afd32de90404e0d80d84fdfa533fd25d7ee26450317d4a38fe",
+          "size": 12216
         },
         {
           "path": "lib/client.py",
@@ -1052,8 +1088,8 @@
         },
         {
           "path": "lib/host_adapter.py",
-          "sha256": "be8ad7c3dec8cfdd5de2f8cfe5dd75f29f0839d87b1485b1e07224b89192a635",
-          "size": 17032
+          "sha256": "ef9158d3aef13864c47c34caa512b53d605eb27a2c2c8e17fd143a4ab4e09766",
+          "size": 19038
         },
         {
           "path": "lib/mime.py",
@@ -1062,18 +1098,18 @@
         },
         {
           "path": "lib/runtime.py",
-          "sha256": "748d3757805ff92f8ae22fc4c6cdca0396c9cb7860becd37e0568725f4bbe7b4",
-          "size": 14367
+          "sha256": "ca6379cf54ccd476c1a63535f54e04dbb64f890e768a89f2d6463f4695d12ef4",
+          "size": 14896
         },
         {
           "path": "lib/store.py",
-          "sha256": "900b892a85bd9ddaac0fe74666efd5568c3fbe7daa87249e24db20fe435bca4b",
-          "size": 31615
+          "sha256": "033403b5c6db63bf0a2b342082ae6385ad867f18ed3705bae8cc39a1fa109e5c",
+          "size": 32272
         },
         {
           "path": "plugin.py",
-          "sha256": "d9b438911247d8e919929e73c25edb280c6ad6542bae58cb6b6a0e4b52fa5a4e",
-          "size": 12003
+          "sha256": "0e2b7c1dfe0db01d4ffb1ef3f6f6c87b481faf815e3ff13f68bded7981256024",
+          "size": 12247
         },
         {
           "path": "scripts/email_daemon.py",
@@ -1121,6 +1157,11 @@
           "size": 1310
         },
         {
+          "path": "tests/test_places.py",
+          "sha256": "f9cd797a7e8fa1a2b7937a9a10350b711d502aeb89c0d72ff59c3ec137def379",
+          "size": 3141
+        },
+        {
           "path": "tests/test_plugin.py",
           "sha256": "48b8f421e67325fd32f09db9c6ae6ab983c9c30d23acd40c49876155cdc1885b",
           "size": 5030
@@ -1144,8 +1185,14 @@
           "path": "tests/test_transport.py",
           "sha256": "964979584d5f706d39dfb1fce87c7af6159decffeb8bb2979681cc980c9414fc",
           "size": 12328
+        },
+        {
+          "path": "ui/icon.svg",
+          "sha256": "171c29f4ffdcdc3c5f2e69008abb93837a646b5f1dcf1bee1dd698b0949ceb75",
+          "size": 238
         }
       ],
+      "icon": "ui/icon.svg",
       "install_specs": [
         "httpx",
         "starlette"
@@ -1153,7 +1200,7 @@
       "name": "email-presence",
       "slug": "email-presence",
       "type": "extension",
-      "version": "0.4.1"
+      "version": "0.5.0"
     },
     {
       "description": "GDELT Cloud geopolitical intelligence: conflict events, news stories, entity graph, energy infrastructure, macro-finance, prediction markets, and web research via MCP Progressive Discovery.",
@@ -1867,12 +1914,15 @@
       "when_to_use": "The owner asks about their own medical data — check a new prescription as a second opinion (pharmacogenetics, interactions with the current regimen, monitoring labs), review laboratory results and trends, look up a locus or clinically significant ClinVar findings in their VCF, polygenic scores, longevity findings, sleep and lifestyle metrics, movement toward a health goal, which tests to take next, or a pre-visit summary."
     },
     {
-      "description": "Bidirectional Slack presence transport for Ouroboros using Socket Mode, durable delivery queues, threaded replies, proactive text messages, and inbound file staging.",
+      "connects": [
+        "Slack"
+      ],
+      "description": "Slack connector for workspace places, with typed conversation facts, durable threaded replies, files, and live place-state delivery holds.",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "89dcda9282cde4f893cd4055ba05e6548e0e03312d4e61ce8f767a1ea4f6da92",
-          "size": 37865
+          "sha256": "eef398ace733c049ba8b5f8236f243dc466a5ba9dbc26adf3e90b851ddfadb6f",
+          "size": 39755
         },
         {
           "path": "lib/__init__.py",
@@ -1886,13 +1936,13 @@
         },
         {
           "path": "lib/events.py",
-          "sha256": "f48551d5d2a11241c304760fa018dc9f88d595fbf6cc4eec2fbd6ccb7d554573",
-          "size": 12930
+          "sha256": "36489a4095ceff17dc086c535cbb3b9696a8b7b0e8bd7f1b35c08626d976d47a",
+          "size": 13039
         },
         {
           "path": "lib/host_adapter.py",
-          "sha256": "a0d65f4efaa47978d9726a1f56a05c2e54275660125843d74e890cb906a3fa76",
-          "size": 48018
+          "sha256": "331a3f38675b336cd2b4769670433cfc5eeeff1fceb00e4466d97f3ba6471630",
+          "size": 50867
         },
         {
           "path": "lib/local_settings.py",
@@ -1911,13 +1961,13 @@
         },
         {
           "path": "lib/runtime.py",
-          "sha256": "3848a965a040f698643290e9672c76e86ecde2dceeabbd28fcedc3610e0f81b0",
-          "size": 29965
+          "sha256": "0545cc27274934c3f827431691cb82eef35c7c14dc284f46d7221e5bb5162255",
+          "size": 31280
         },
         {
           "path": "lib/slack_api.py",
-          "sha256": "d94512edeb7115fc8431d98cf2c244115ef47a506821deeabea290349222a8bd",
-          "size": 36139
+          "sha256": "f0099d4306c3049d9be051001bc5566af043dbeef943832aa296b89b8dadd63f",
+          "size": 36325
         },
         {
           "path": "lib/socket_mode.py",
@@ -1926,8 +1976,8 @@
         },
         {
           "path": "lib/store.py",
-          "sha256": "df264821396fcacdae8655529e994640ecbb57ea7a488efd9d7b4b41ed869810",
-          "size": 50697
+          "sha256": "412cae0479aaba1d8aa61e11e8465ac3d3dbc391e573b25ded15cbf2d301ddb7",
+          "size": 51391
         },
         {
           "path": "lib/tool_results.py",
@@ -1941,8 +1991,8 @@
         },
         {
           "path": "plugin.py",
-          "sha256": "2c4abaa52d5d975926b8d23092432ab42c7256da719bf5a19a8c8a70996bae55",
-          "size": 29047
+          "sha256": "ba10143e9ed6a0398aa6771a9203e0fb1eed4352d5dd2178a7c06f84d905b7bb",
+          "size": 28585
         },
         {
           "path": "scripts/slack_daemon.py",
@@ -1981,8 +2031,8 @@
         },
         {
           "path": "tests/test_delivery_reporting.py",
-          "sha256": "5a08ae68268547eb448f02545b92347825b75435dafcec4a7f57b8c93b078aca",
-          "size": 22429
+          "sha256": "8a4b92396a8d64c90286eaf9fcaa62654acc970b5944114d303fab2fd7fde79d",
+          "size": 22856
         },
         {
           "path": "tests/test_directory.py",
@@ -2001,8 +2051,8 @@
         },
         {
           "path": "tests/test_host_refusals.py",
-          "sha256": "9c72fa01e0b706c13bdd27a1eb154716c66ee6c8ea11d9a35b14cf91db005e03",
-          "size": 19760
+          "sha256": "56e40ebb54b250a627d200f2ca853b7217d766df37ed385adb5694b79c46a213",
+          "size": 19977
         },
         {
           "path": "tests/test_inbound_files.py",
@@ -2038,6 +2088,11 @@
           "path": "tests/test_message_revisions.py",
           "sha256": "5a320cb1bb2bec8f3b114befa92b1c3f2fd0665151f0014f21513a98bc6dbdce",
           "size": 6942
+        },
+        {
+          "path": "tests/test_places.py",
+          "sha256": "4596905aae501c83eeb9ef6e33a95a5ab2c482411502e378b4c7800181bcfda1",
+          "size": 7023
         },
         {
           "path": "tests/test_presence_continuation.py",
@@ -2096,10 +2151,16 @@
         },
         {
           "path": "tests/test_workers_plugin.py",
-          "sha256": "5293d467e26b697886539a878f36f0608fb5d028bb18524719e1cfcf68afd719",
-          "size": 42106
+          "sha256": "bcb43e367f77e82bb671f437b444a9f8bae38825ddece59bc46b2d1b14f9c0e8",
+          "size": 42187
+        },
+        {
+          "path": "ui/icon.svg",
+          "sha256": "3ab9abca70837fb278315d016fae0ec5443971ed4363aa210007aa7d112c86ad",
+          "size": 207
         }
       ],
+      "icon": "ui/icon.svg",
       "install_specs": [
         "httpx",
         "websockets"
@@ -2107,7 +2168,7 @@
       "name": "slack-bridge",
       "slug": "slack-bridge",
       "type": "extension",
-      "version": "1.6.2"
+      "version": "1.7.0"
     },
     {
       "description": "Personal lists in one skill-local store: a free group tree, verbatim entries captured from clear owner intent in chat, completion, moves and an undoable trash, a read-only subtree selection, checksummed export/restore with typed refusals for a missing store, and a Today checklist widget with local-day rollover. No network, purchases or reminders.",
@@ -2195,7 +2256,10 @@
       "when_to_use": "The user attached a CSV or XLSX file and asks to inspect, summarize, filter, compare, group, sort, or calculate from its data."
     },
     {
-      "description": "Public Telegram bot for presences: Ouroboros talks with other people in Telegram, with durable delivery and media staging. To message your own Ouroboros, use the built-in telegram skill.",
+      "connects": [
+        "Telegram"
+      ],
+      "description": "Telegram bot connector for group and channel places, with typed mentions and replies, durable media delivery, and live place-state holds. Owner chat uses the built-in Telegram bridge.",
       "files": [
         {
           "path": "FORMATTER_PROVENANCE.md",
@@ -2209,13 +2273,13 @@
         },
         {
           "path": "SKILL.md",
-          "sha256": "628fa533ab15e629e7e979c0c7edc3f5bb6247248e30ab17a43dceb16fccc1d1",
-          "size": 16054
+          "sha256": "7726d3247ed1d3af1f0c3e6a131ac8a2cbdcc21aad88163fef7b0f057c80076a",
+          "size": 16694
         },
         {
           "path": "plugin.py",
-          "sha256": "e097ddcde48d0a3a925e341948625e8c8082709c7f804dfd46432f10e4ae3715",
-          "size": 16273
+          "sha256": "a70b1807287ce7d1d0d11899ac4a081cc934d6e6ba7fd39e748cf6d3952d0eca",
+          "size": 16222
         },
         {
           "path": "telegram_bot/__init__.py",
@@ -2224,13 +2288,13 @@
         },
         {
           "path": "telegram_bot/api.py",
-          "sha256": "69a907370f1ad265afabe26c2962bdf68985f773c57dccf29a124b9f2c5c9ee2",
-          "size": 18480
+          "sha256": "fe68aa64efdfaaad2eafdca135fd5a0af6ff5429e5b81435fda4e011b7d6aa72",
+          "size": 18519
         },
         {
           "path": "telegram_bot/custody.py",
-          "sha256": "e15953174b3ee2738e3b9cc652523623e17f02dea85d5e138c9c3512a1b16340",
-          "size": 38091
+          "sha256": "b2c7706cd173c854bc19b6bf6eccc312023de94be2cc3cf61aa774318cc99853",
+          "size": 38688
         },
         {
           "path": "telegram_bot/delivery.py",
@@ -2239,8 +2303,8 @@
         },
         {
           "path": "telegram_bot/events.py",
-          "sha256": "bc49f6a636912a3a9249ce8bee824d67f2296f93793bf7879d6a16c0d8330ea7",
-          "size": 9825
+          "sha256": "51fdd3ea1e056da00110bda540f0f1ea92fe3ada9c0e93a9d7d47fb8cba164cf",
+          "size": 12418
         },
         {
           "path": "telegram_bot/formatting.py",
@@ -2249,13 +2313,13 @@
         },
         {
           "path": "telegram_bot/host.py",
-          "sha256": "71e1af12ef48db1eb4ae092ec60b80e488de6de021e14f282d644f203e16acfa",
-          "size": 13747
+          "sha256": "b9cb8ac0510298b47896e05048f14e6824dcad24f2c199c81a8be44fb8c7b52f",
+          "size": 15167
         },
         {
           "path": "telegram_bot/runtime.py",
-          "sha256": "61c864aa9345d3e70d1405ed8011f46e7d9e7bc52117c744897622a4136094b0",
-          "size": 23597
+          "sha256": "79c95fbd0ec936e6e00d8a0bc5f0f026885127ee14c2cc549c609caba2faca44",
+          "size": 24784
         },
         {
           "path": "telegram_bot/tools.py",
@@ -2313,9 +2377,14 @@
           "size": 5392
         },
         {
+          "path": "tests/test_places.py",
+          "sha256": "b311e3fefe05b9b9f7b1a7a7985b5124799a962c77e0f981530a0bc45c56411e",
+          "size": 4355
+        },
+        {
           "path": "tests/test_plugin.py",
-          "sha256": "97c4bdf123264698556a69147c938f4d90f34cdb24ee483610317f43560439bd",
-          "size": 8901
+          "sha256": "36641958c641c8255ed460ccea9630517c038bc527953484b2ff9743e9af3cc9",
+          "size": 8915
         },
         {
           "path": "tests/test_retained_custody.py",
@@ -2326,12 +2395,18 @@
           "path": "tests/test_runtime.py",
           "sha256": "225868ee9a2d3289f60a38254f944d40bfa68841034a6faae4e762981be0bca3",
           "size": 23428
+        },
+        {
+          "path": "ui/icon.svg",
+          "sha256": "3e83c7b58cb902e37b632ee255e7a9884ae301743dc16752182ec778d4cd69bd",
+          "size": 210
         }
       ],
+      "icon": "ui/icon.svg",
       "name": "telegram-bot",
       "slug": "telegram-bot",
       "type": "extension",
-      "version": "0.5.1"
+      "version": "0.6.0"
     },
     {
       "description": "Token Observatory — Liquid Glass dashboard for recorded Ouroboros token usage, tasks and models.",
