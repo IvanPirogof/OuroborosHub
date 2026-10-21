@@ -98,10 +98,10 @@ def test_positive_hours_are_not_quantized_to_zero_in_tool_snapshot_or_widget_dat
     hours = answer["joint"]["claude"]["conditional_account_hours"]
     assert hours == pytest.approx(float(expected), abs=1e-10)
     assert hours > 0
-    assert "conditional ≈<0.01 account-hours" in qc.snapshot_text(answer)
+    assert "conditional ≈<0.1 account-hours" in qc.snapshot_text(answer)
     assert "common-watched-period pace" in qc.snapshot_text(answer)
     assert answer["joint"]["claude"]["hours_pace_basis"] == "common_watched_period"
-    assert qc.rounded_hours(0) == "0.00"  # a real zero stays distinct
+    assert qc.rounded_hours(0) == "0.0"  # a real zero stays distinct
 
 
 def test_per_window_uses_trailing_hour_not_the_joint_calibration_average(tmp_path):

@@ -151,7 +151,7 @@ it (`api.get_state_dir()`):
   offer a separate ungranted widget-only mode. After a successful sweep the collector writes
   `context-snapshot.json` (`schema_version`, `observed_at`, `valid_until`,
   `text`) — the tool's own figures as one deterministic text; derived
-  figures are printed at calibration resolution (≈, one decimal), reported
+  figures print at one decimal (capacity and hours marked ≈), reported
   instants to the nearest second, current readings without a poll time. An
   unchanged text is not rewritten until its validity nears its end; a failed
   sweep writes nothing, so the file expires. Validity is at most 420 seconds

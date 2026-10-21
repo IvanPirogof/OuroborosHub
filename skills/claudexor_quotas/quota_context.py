@@ -72,19 +72,14 @@ def _derived(value: Any, places: int = 1) -> str:
     return "—" if value is None else f"{round(float(value), places):.{places}f}"
 
 
-def rounded_hours(value: Any) -> str:
-    """Hours at one decimal like the other derived figures; positive sub-hour work is never 0."""
-    if value is None:
-        return "—"
-    number = float(value)
-    if 0 < number < .005:
-        return "<0.01"
-    return f"{number:.2f}" if number < .05 else _derived(number)
-
-
 def _rate(value: float) -> str:
-    """A measured pace at the derived resolution; a positive pace below it is not 0."""
+    """A derived figure at one decimal; a positive value below that resolution is not 0."""
     return "<0.1" if 0 < value < .05 else _derived(value)
+
+
+def rounded_hours(value: Any) -> str:
+    """Conditional hours at the derived resolution: positive sub-hour work is never 0."""
+    return "—" if value is None else _rate(float(value))
 
 
 def _second(value: Any) -> str:
