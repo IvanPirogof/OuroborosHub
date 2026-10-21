@@ -15,10 +15,14 @@ unless the previous validity is about to end), ``valid_until`` (UTC ISO) and
 Rules this module keeps:
 
 * the text is a pure function of the figures: no per-account observation
-  time of a fresh reading, no relative age ("5 min ago"), no clock — a
-  refresh that changed nothing writes nothing new and the host dedupes it;
-* a reset is printed exactly as reported (absolute, UTC, to the second);
+  time of a fresh reading (the envelope dates the text), no relative age
+  ("5 min ago"), no clock — a refresh that changed nothing writes nothing new
+  and the host dedupes it; identical current facts fold into one counted line;
+* a reported instant is printed absolute, UTC, to the nearest second (the
+  engine's sub-second jitter is not a change; validity keeps the exact one);
   a last-known value carries its own fixed dated observation, never "now";
+* derived figures (pace, capacity, conditional hours) are printed at one
+  decimal, the resolution of their calibration; measured reserve keeps two;
 * unknown stays unknown: a window nobody reads is "no current reading",
   never 0; an account left out of a joint figure is counted, with why;
 * when the text would exceed the bound, whole lower-priority lines are
@@ -68,12 +72,20 @@ def _derived(value: Any, places: int = 1) -> str:
     return "—" if value is None else f"{round(float(value), places):.{places}f}"
 
 
+def _rate(value: float) -> str:
+    """A derived figure at one decimal; a positive value below that resolution is not 0."""
+    return "<0.1" if 0 < value < .05 else _derived(value)
+
+
 def rounded_hours(value: Any) -> str:
-    """Compatibility name, now two decimals: positive sub-hour work is not 0."""
-    if value is None:
-        return "—"
-    number = float(value)
-    return "<0.01" if 0 < number < .005 else f"{number:.2f}"
+    """Conditional hours at the derived resolution: positive sub-hour work is never 0."""
+    return "—" if value is None else _rate(float(value))
+
+
+def _second(value: Any) -> str:
+    """A reported instant in the text, to the nearest second; unreadable text stays as reported."""
+    stamp = qs.parse_instant(value)
+    return qs.iso(round(stamp)) if stamp is not None else str(value)
 
 
 def _limit_line(row: Dict[str, Any]) -> str:
@@ -101,13 +113,13 @@ def _limit_line(row: Dict[str, Any]) -> str:
         parts.append(f"{row['applicability_unknown_accounts']} other accounts: applicability unknown")
     reset = (row.get("next_reset") or {}).get("at")
     if reset:
-        parts.append(f"next reported reset {reset} ({(row['next_reset'] or {}).get('accounts')} accounts)")
+        parts.append(f"next reported reset {_second(reset)} ({(row['next_reset'] or {}).get('accounts')} accounts)")
     restrictions = row.get("restrictions") or {}
     if restrictions:
         parts.append("held: " + ", ".join(f"{k} {(v or {}).get('accounts')}" for k, v in sorted(restrictions.items())))
     pace = row.get("recent_pace") or {}
     if pace.get("windows_per_hour") is not None:
-        parts.append(f"measured pace {float(pace['windows_per_hour']):.3f} account-windows/h "
+        parts.append(f"measured pace {_rate(float(pace['windows_per_hour']))} account-windows/h "
                      f"({pace.get('accounts_known')} of {pace.get('of')}; {pace.get('state')}; "
                      "trailing-hour watched observations; exact spans in quota_summary)")
     else:
@@ -137,7 +149,8 @@ def _joint_line(joint: Dict[str, Any]) -> str:
 
 def _resource_lines(row: Dict[str, Any]) -> List[str]:
     """Every anonymous facet separately; amounts of unlike accounts/scopes are
-    never added. Dated even when fresh, since resource refreshes are separate."""
+    never added. A last-known facet keeps its observation date; a current one is
+    dated by the snapshot envelope, so equal current facts fold into a cohort."""
     def quantity(item: Dict[str, Any], field: str) -> str:
         # The established monetary contract is integer minor units + scale.
         # Scale by string placement, never float arithmetic. Other units stay
@@ -178,19 +191,20 @@ def _resource_lines(row: Dict[str, Any]) -> List[str]:
                     usable = {True: "yes", False: "no", None: "unknown"}.get(item.get("usable_now"), "unknown")
                     count = item.get('available_count')
                     values.append(f"{label} count {count if count is not None else 'unknown'} usable {usable} "
-                                  f"reset {item.get('resets_at') or 'not reported'} (information only)")
+                                  f"reset {_second(item['resets_at']) if item.get('resets_at') else 'not reported'} "
+                                  "(information only)")
                 else:
                     values.append(str(item.get("code") or "diagnostic"))
                 if facet in ("balances", "spending"):
                     until = (item.get("period") or {}).get("ends_at") or item.get("resets_at")
                     if until:
-                        values[-1] += f"; reported period/reset ends {until}"
+                        values[-1] += f"; reported period/reset ends {_second(until)}"
                 if item.get("state") == "last_known":
                     values[-1] += "; last known: reported boundary passed"
             omitted = observation.get("omitted") or 0
-            lines.append(f"{facet}: {', '.join(values) if values else 'none reported'}; "
-                         f"{'current' if state == 'current' else 'last known'} observed "
-                         f"{observation.get('observed_at') or 'time not reported'}"
+            dated = "current" if state == "current" else (
+                f"last known observed {observation.get('observed_at') or 'time not reported'}")
+            lines.append(f"{facet}: {', '.join(values) if values else 'none reported'}; {dated}"
                          + (f"; {omitted} more rows in quota_summary" if omitted else ""))
     # Repeated identical resource facts are a counted cohort, not dozens of
     # repeated paragraphs. This never adds amounts across scopes/accounts.
