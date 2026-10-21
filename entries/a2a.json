@@ -2,8 +2,12 @@
   "category": [
     "messaging"
   ],
-  "description": "Agent-to-Agent protocol bridge for Ouroboros. Provides a local A2A-compatible server plus client tools for discovering and messaging other A2A agents.",
-  "digest": "16fdc08dd0cf84a0c1986f7908500116dfab010fde204a0e1bf4427d99235fe9",
+  "connects": [
+    "A2A"
+  ],
+  "description": "Agent-to-Agent connector for peer places, with durable Presence requests, discovery, streaming status and retained task outcomes.",
+  "digest": "8ded2740818b0f4c288e87a6a3c847a43ecec3eed3d3b66b78f6f288d30bf3ca",
+  "icon": "ui/icon.svg",
   "install_specs": [
     {
       "kind": "pip",
@@ -22,7 +26,7 @@
     "path": "skills/a2a"
   },
   "type": "extension",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "when_to_use": "User asks to communicate with another A2A-compatible agent, discover an agent card, send an A2A message, check A2A task status, or expose this Ouroboros instance as an A2A peer.",
   "withdrawn": null
 }
