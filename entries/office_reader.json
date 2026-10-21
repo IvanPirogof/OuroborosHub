@@ -3,7 +3,7 @@
     "documents"
   ],
   "description": "Read Word, PowerPoint, Excel, legacy XLS, CSV, HTML and Outlook MSG files as one Markdown text, and create new XLSX workbooks.",
-  "digest": "e22246b9a2b49369a75011380520c1dedf51e1649a5cb7d5df5ad5d9659cbf1a",
+  "digest": "6f794bfd8aee4c179d756863e5a6893746281ab5348328fb075b64bbe172f07c",
   "install_specs": [
     {
       "kind": "pip",

@@ -116,10 +116,14 @@ directory, the Ouroboros `uploads`, `task_results`, `task_drives` and
 `Deliverables` directories, and the system temporary directory.
 
 - The task's folder counts when the host admits its workspace
-  (`ctx.is_workspace_mode()`), or supplies a verified room folder for an
+  (`ctx.is_workspace_mode()`), or supplies room-folder metadata for an
   ordinary conversation in a project. An explicit task workspace takes
   precedence. This includes projects on an external disk; an unadmitted
-  workspace or an unavailable room-folder notice adds nothing.
+  workspace or an unavailable room-folder notice adds nothing. The extension
+  child trusts the room metadata: it cannot verify direct-chat identity.
+  The owner's task API currently permits those metadata keys on non-direct
+  tasks too, so a caller of that API can supply an additional room read root,
+  including a folder outside home. This is not a separate access boundary.
 - A relative path starts in that folder, never in the process's working
   directory (the host starts extension children in its own repository). In a
   task without a selected folder a relative path is refused; pass an absolute

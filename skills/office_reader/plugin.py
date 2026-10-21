@@ -100,8 +100,8 @@ def _data_root() -> Optional[pathlib.Path]:
 def _task_folder(ctx: Any) -> Optional[pathlib.Path]:
     """The host-selected task workspace or, without one, the direct conversation's room folder.
 
-    Workspace admission comes from the ToolContext ABI. The host alone supplies ``_project_room_dir`` for a
-    direct room conversation; it survives child transport even though ``is_direct_chat`` does not.
+    Workspace admission comes from the ToolContext ABI. The host supplies ``_project_room_dir`` for direct
+    room conversations. The child trusts that metadata; direct-chat identity is not transported.
     """
     if ctx is None:
         return None
