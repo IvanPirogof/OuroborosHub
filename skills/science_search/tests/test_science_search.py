@@ -95,6 +95,25 @@ def crossref(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {"status": "ok", "message-type": "work-list", "message": {"items": items, "total-results": len(items)}}
 
 
+def crossref_server(items: List[Dict[str, Any]]) -> Callable:
+    """Crossref /works over ``items``: different filters AND together, and rows/offset count what matched.
+
+    Only the type, member and prefix filters are modelled (documented works filters; dates are ignored here)."""
+    def responder(request: httpx.Request) -> httpx.Response:
+        matched = list(items)
+        for clause in filter(None, request.url.params.get("filter", "").split(",")):
+            name, _, value = clause.partition(":")
+            if name == "type":
+                matched = [i for i in matched if i.get("type") == value]
+            elif name == "member":
+                matched = [i for i in matched if str(i.get("member")) == value]
+            elif name == "prefix":
+                matched = [i for i in matched if str(i.get("DOI", "")).lower().startswith(value.lower() + "/")]
+        start, rows = int(request.url.params.get("offset", 0)), int(request.url.params.get("rows", 20))
+        return httpx.Response(200, json=crossref(matched[start:start + rows]))
+    return responder
+
+
 OPENALEX_WORK = {
     "id": "https://openalex.org/W1", "doi": "https://doi.org/10.1000/ABC", "title": "Deep Widgets", "publication_year": 2021,
     "authorships": [{"author": {"display_name": "Ada Example"}}, {"author": {"display_name": "Bo Sample"}}],
@@ -119,6 +138,27 @@ ARXIV_FEED = """<?xml version="1.0" encoding="UTF-8"?>
     <published>2021-01-02T00:00:00Z</published>
     <arxiv:doi>10.1000/abc</arxiv:doi>
     <arxiv:journal_ref>Widget Letters 3</arxiv:journal_ref>
+  </entry>
+</feed>"""
+# The error answer printed in the arXiv API User's Manual, section 3.4 (a valid Atom feed with one error entry).
+ARXIV_ERROR_FEED = """<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+  <link xmlns="http://www.w3.org/2005/Atom" href="http://arxiv.org/api/query?search_query=&amp;id_list=1234.12345" rel="self" type="application/atom+xml"/>
+  <title xmlns="http://www.w3.org/2005/Atom">ArXiv Query: search_query=&amp;id_list=1234.12345</title>
+  <id xmlns="http://www.w3.org/2005/Atom">http://arxiv.org/api/kvuntZ8c9a4Eq5CF7KY03nMug+Q</id>
+  <updated xmlns="http://www.w3.org/2005/Atom">2007-10-12T00:00:00-04:00</updated>
+  <opensearch:totalResults xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">1</opensearch:totalResults>
+  <opensearch:startIndex xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">0</opensearch:startIndex>
+  <opensearch:itemsPerPage xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">1</opensearch:itemsPerPage>
+  <entry xmlns="http://www.w3.org/2005/Atom">
+    <id xmlns="http://www.w3.org/2005/Atom">http://arxiv.org/api/errors#incorrect_id_format_for_1234.12345</id>
+    <title xmlns="http://www.w3.org/2005/Atom">Error</title>
+    <summary xmlns="http://www.w3.org/2005/Atom">incorrect id format for 1234.12345</summary>
+    <updated xmlns="http://www.w3.org/2005/Atom">2007-10-12T00:00:00-04:00</updated>
+    <link xmlns="http://www.w3.org/2005/Atom" href="http://arxiv.org/api/errors#incorrect_id_format_for_1234.12345" rel="alternate" type="text/html"/>
+    <author xmlns="http://www.w3.org/2005/Atom">
+      <name xmlns="http://www.w3.org/2005/Atom">arXiv api core</name>
+    </author>
   </entry>
 </feed>"""
 
@@ -353,7 +393,12 @@ def test_ncbi_errors_are_not_mistaken_for_absence(env):
     backend.route("eutils.ncbi.nlm.nih.gov", "/entrez/eutils/esummary.fcgi",
                   reply({"result": {"uids": ["123"], "123": {"uid": "123", "error": "cannot get document summary"}}}))
     answer = call(env, "work_lookup", id="pmid:123")
-    assert answer["error"]["code"] == "not_found" and answer["sources"]["pubmed"]["status"] == "not_found"
+    # "cannot get document summary" says the summary could not be read, not that PMID 123 does not exist.
+    assert answer["error"]["code"] == "all_sources_failed" and answer["sources"]["pubmed"]["status"] == "bad_response"
+    assert "cannot get document summary" in answer["sources"]["pubmed"]["message"]
+    backend.route("eutils.ncbi.nlm.nih.gov", "/entrez/eutils/esummary.fcgi", reply({"result": {"uids": []}}))
+    answer = call(env, "work_lookup", id="pmid:124")  # an envelope without the uid is not a statement of absence
+    assert answer["error"]["code"] == "all_sources_failed" and answer["sources"]["pubmed"]["status"] == "bad_response"
 
 
 def test_invalid_arguments_are_refused_before_any_request(env):
@@ -362,14 +407,20 @@ def test_invalid_arguments_are_refused_before_any_request(env):
     for kwargs in ({"query": ""}, {"query": "x" * 501}, {"query": "a", "kind": "books"}, {"query": "a", "limit": 0},
                    {"query": "a", "limit": 26}, {"query": "a", "offset": -1}, {"query": "a", "sources": ["arxiv"]},
                    {"query": "a", "sources": "openalex"}, {"query": "a", "year_from": 2020, "year_to": 2019},
-                   {"query": "a", "year_from": 20}, {"query": "a", "limit": True}):
+                   {"query": "a", "year_from": 20}, {"query": "a", "limit": True}, {"query": "a", "limit": 2.5},
+                   {"query": "a", "offset": float("inf")}, {"query": "a", "year_from": 2020.5},
+                   {"query": "a", "offset": float("nan")}, {"query": "a", "limit": "2.0"}):
         answer = call(env, "literature_search", **kwargs)
         assert answer["ok"] is False and answer["error"]["code"] == "invalid_argument", kwargs
         assert answer["sources"] == {} and set(answer["keys_configured"]) == set(plugin.SETTINGS_KEYS)
     assert call(env, "work_lookup", id="not an identifier")["error"]["code"] == "invalid_argument"
     assert call(env, "citations", doi="abc")["error"]["code"] == "invalid_argument"
     assert call(env, "citations", doi="10.1000/abc", mode="all")["error"]["code"] == "invalid_argument"
+    assert call(env, "citations", doi="10.1000/abc", limit=1.5)["error"]["code"] == "invalid_argument"
     assert backend.requests == []
+    backend.route("api.openalex.org", "/works", reply({"results": [OPENALEX_WORK]}))
+    whole = call(env, "literature_search", query="a", sources=["openalex"], limit=3.0)  # a whole float is an integer
+    assert whole["ok"] and whole["limit"] == 3
 
 
 def test_preprints_use_arxiv_and_crossref_posted_content(env):
@@ -377,10 +428,10 @@ def test_preprints_use_arxiv_and_crossref_posted_content(env):
     env["use"]()
     backend.route("export.arxiv.org", "/api/query", reply(text=ARXIV_FEED))
     # The real posted-content items carry no container-title; the select list cannot ask for institution.
-    backend.route("api.crossref.org", "/works", reply(crossref([
+    backend.route("api.crossref.org", "/works", crossref_server([
         {**CROSSREF_ITEM, "DOI": "10.1101/2021.01.02.425001", "container-title": [], "group-title": "Neuroscience",
-         "publisher": "Cold Spring Harbor Laboratory"},
-        CROSSREF_OTHER])))
+         "publisher": "Cold Spring Harbor Laboratory", "member": "246", "type": "posted-content"},
+        CROSSREF_OTHER]))
     answer = call(env, "literature_search", query="deep widgets", kind="preprints", sources=["arxiv", "biorxiv"],
                   year_from=2020, year_to=2021, limit=2)
     assert answer["ok"] and answer["count"] == 2
@@ -402,6 +453,193 @@ def test_preprints_use_arxiv_and_crossref_posted_content(env):
     backend.route("export.arxiv.org", "/api/query", reply(text='<!DOCTYPE feed [<!ENTITY x "y">]><feed/>'))
     answer = call(env, "literature_search", query="other", kind="preprints")
     assert answer["sources"]["arxiv"]["status"] == "bad_response"
+
+
+def test_biorxiv_pages_are_filtered_by_crossref_not_shortened_afterwards(env):
+    backend = env["backend"]
+    env["use"]()
+    posted = []
+    for n in range(8):  # member 246 posted-content interleaved with a synthetic second prefix
+        posted.append({**CROSSREF_ITEM, "DOI": f"10.1101/2021.01.{n:02d}", "member": 246, "type": "posted-content"})
+        posted.append({**CROSSREF_ITEM, "DOI": f"10.5555/other.{n:02d}", "member": 246, "type": "posted-content"})
+    backend.route("api.crossref.org", "/works", crossref_server(posted))
+    dois = []
+    for offset in (0, 3):
+        answer = call(env, "literature_search", query="widgets", kind="preprints", sources=["biorxiv"], limit=3,
+                      offset=offset)
+        assert answer["ok"] and answer["sources"]["biorxiv"] == {"status": "ok", "count": 3}, answer
+        dois += [r["doi"] for r in answer["results"]]
+    assert dois == [f"10.1101/2021.01.{n:02d}" for n in range(6)]  # full pages, offsets in bioRxiv records
+    sent = backend.sent("api.crossref.org")[-1].url.params
+    assert sent["filter"].split(",") == ["type:posted-content", "member:246", "prefix:10.1101"]
+    assert sent["rows"] == "3" and sent["offset"] == "3"
+
+
+def test_an_arxiv_error_entry_is_never_a_paper_and_never_cached(env):
+    backend = env["backend"]
+    env["use"]()
+    backend.route("export.arxiv.org", "/api/query", [reply(text=ARXIV_ERROR_FEED), reply(text=ARXIV_FEED)])
+    answer = call(env, "work_lookup", id="arXiv:2101.00001v2")  # the HTTP 200 case; no live occurrence was observed
+    assert answer["ok"] is False and answer["work"] is None and answer["error"]["code"] == "all_sources_failed"
+    assert answer["sources"]["arxiv"]["status"] == "bad_response"
+    assert "incorrect id format for 1234.12345" in answer["sources"]["arxiv"]["message"]
+    assert not list((env["state"] / "cache").glob("*.json"))
+    again = call(env, "work_lookup", id="arXiv:2101.00001v2")  # asked again: the error body was not cached
+    assert again["ok"] and again["work"]["title"] == "Deep Widgets: a preprint"
+    assert len(backend.sent("export.arxiv.org")) == 2
+    backend.route("export.arxiv.org", "/api/query", reply(text=ARXIV_ERROR_FEED))
+    search = call(env, "literature_search", query="widgets", kind="preprints")
+    assert search["ok"] is False and search["results"] == [] and search["sources"]["arxiv"]["status"] == "bad_response"
+
+
+def test_an_error_feed_cached_by_an_earlier_release_is_requested_again(env, monkeypatch):
+    backend = env["backend"]
+    env["use"]()
+    backend.route("export.arxiv.org", "/api/query", [reply(text=ARXIV_ERROR_FEED), reply(text=ARXIV_FEED)])
+    with monkeypatch.context() as earlier:
+        earlier.setattr(P, "_arxiv_feed", lambda text: None)  # the earlier check let a valid error feed be cached
+        first = call(env, "work_lookup", id="2101.00001v2")
+    assert first["ok"] is False and first["sources"]["arxiv"]["status"] == "bad_response"
+    assert len(list((env["state"] / "cache").glob("*.json"))) == 1  # the bad body sits in the cache
+    second = call(env, "work_lookup", id="2101.00001v2")
+    assert second["ok"] and second["work"]["id"] == "arXiv:2101.00001v2"
+    assert len(backend.sent("export.arxiv.org")) == 2  # checked again on read, dropped, fetched afresh
+    stored = [json.loads(p.read_text(encoding="utf-8"))["value"] for p in (env["state"] / "cache").glob("*.json")]
+    assert stored == [ARXIV_FEED]
+    third = call(env, "work_lookup", id="2101.00001v2")  # control: a good cached body is still served from cache
+    assert third["ok"] and len(backend.sent("export.arxiv.org")) == 2
+
+
+def test_a_cached_body_failing_its_check_is_dropped_and_fetched_again(env, tmp_path):
+    backend = env["backend"]
+    backend.route("api.example.org", "/x", [reply({"error": "stale"}), reply({"results": []})])
+
+    def check(data):
+        if "error" in data:
+            raise transport.SourceError("bad_response", "error envelope")
+
+    http = transport.Http(tmp_path / "state", transport.Deadline(30), transport=httpx.MockTransport(backend))
+    try:
+        assert http.get("example", "https://api.example.org/x", ttl=3600) == ({"error": "stale"}, False)
+        assert http.get("example", "https://api.example.org/x", ttl=3600, validate=check) == ({"results": []}, False)
+        assert http.get("example", "https://api.example.org/x", ttl=3600, validate=check) == ({"results": []}, True)
+    finally:
+        http.close()
+    assert len(backend.sent("api.example.org")) == 2
+
+
+@pytest.mark.parametrize("query, expression", [
+    ("deep widgets", "all:deep AND all:widgets"),
+    ('"graph neural networks" survey', 'all:"graph neural networks" AND all:survey'),
+    ("transformers OR attention", 'all:transformers AND all:"OR" AND all:attention'),
+    ("au:hinton capsules", 'all:"au:hinton" AND all:capsules'),
+    ("C++ (2+1)-dimensional -review TiO2/graphene", 'all:"C++" AND all:"(2+1)-dimensional" AND all:"-review" AND all:"TiO2/graphene"'),
+    ("COVID-19 Schrödinger's e.g.", "all:COVID-19 AND all:Schrödinger's AND all:e.g."),
+    ('deep "learning', "all:deep AND all:learning"),
+    ('back\\slash "a  b"', 'all:"back slash" AND all:"a b"'),
+    ('"" \\', ""),
+])
+def test_arxiv_queries_are_plain_terms_that_must_all_match(query, expression):
+    assert P.arxiv_expression(query) == expression
+
+
+def test_an_arxiv_query_without_searchable_words_sends_nothing(env):
+    backend = env["backend"]
+    env["use"]()
+    answer = call(env, "literature_search", query='"" \\', kind="preprints")
+    assert answer["ok"] is False and answer["sources"]["arxiv"]["status"] == "bad_request"
+    assert backend.sent("export.arxiv.org") == []
+    backend.route("export.arxiv.org", "/api/query", reply(text=ARXIV_FEED))
+    call(env, "literature_search", query='"graph theory" OR', kind="preprints")
+    assert backend.sent("export.arxiv.org")[-1].url.params["search_query"] == 'all:"graph theory" AND all:"OR"'
+
+
+def test_pubmed_items_ncbi_cannot_summarize_are_partial_coverage_not_absence(env):
+    backend = env["backend"]
+    env["use"]()
+    backend.route("eutils.ncbi.nlm.nih.gov", "/entrez/eutils/esearch.fcgi", reply({"esearchresult": {"idlist": ["111", "222", "333"]}}))
+    backend.route("eutils.ncbi.nlm.nih.gov", "/entrez/eutils/esummary.fcgi", reply({"result": {"uids": ["111", "222"],
+        "111": {"uid": "111", "title": "Deep Widgets", "pubdate": "2021"},
+        "222": {"uid": "222", "error": "cannot get document summary"}}}))
+    answer = call(env, "literature_search", query="widgets", sources=["pubmed"])
+    assert answer["ok"] and answer["count"] == 1 and answer["results"][0]["id"] == "pmid:111"
+    status = answer["sources"]["pubmed"]
+    assert status["status"] == "partial" and status["count"] == 1 and "not absence" in status["message"]
+    assert status["unread"] == [{"id": "222", "message": "cannot get document summary"},
+                                {"id": "333", "message": "no summary in NCBI's answer"}]
+    backend.route("eutils.ncbi.nlm.nih.gov", "/entrez/eutils/esearch.fcgi", reply({"esearchresult": {"idlist": ["444"]}}))
+    backend.route("eutils.ncbi.nlm.nih.gov", "/entrez/eutils/esummary.fcgi", reply({"result": {"uids": ["444"],
+        "444": {"uid": "444", "error": "cannot get document summary"}}}))
+    answer = call(env, "literature_search", query="widgets again", sources=["pubmed"])
+    assert answer["ok"] is False and answer["error"]["code"] == "all_sources_failed"  # a failed source, not "no papers"
+    assert answer["sources"]["pubmed"]["status"] == "bad_response" and "none of their summaries" in answer["sources"]["pubmed"]["message"]
+
+
+ESUMMARY = "/entrez/eutils/esummary.fcgi"
+
+
+def summaries_sent(backend):
+    return [r for r in backend.sent("eutils.ncbi.nlm.nih.gov") if r.url.path == ESUMMARY]
+
+
+def test_incomplete_ncbi_summaries_are_used_but_never_cached(env):
+    backend = env["backend"]
+    env["use"]()
+    failed = {"result": {"uids": ["123"], "123": {"uid": "123", "error": "cannot get document summary"}}}
+    whole = {"result": {"uids": ["123"], "123": {"uid": "123", "title": "Deep Widgets", "pubdate": "2021"}}}
+    backend.route("eutils.ncbi.nlm.nih.gov", ESUMMARY, [reply(failed), reply(whole)])
+    backend.route("api.openalex.org", "/works/pmid:123", reply(status=404))
+    first = call(env, "work_lookup", id="pmid:123")
+    assert first["ok"] is False and first["sources"]["pubmed"]["status"] == "bad_response"
+    second = call(env, "work_lookup", id="pmid:123")  # the same request once NCBI has recovered
+    assert second["ok"] and second["work"]["title"] == "Deep Widgets" and len(summaries_sent(backend)) == 2
+    third = call(env, "work_lookup", id="pmid:123")  # control: the complete answer is cached
+    assert third["ok"] and third["work"]["title"] == "Deep Widgets" and len(summaries_sent(backend)) == 2
+
+    backend.route("eutils.ncbi.nlm.nih.gov", "/entrez/eutils/esearch.fcgi", reply({"esearchresult": {"idlist": ["111", "222"]}}))
+    partial = {"result": {"uids": ["111", "222"], "111": {"uid": "111", "title": "Found", "pubdate": "2021"},
+                          "222": {"uid": "222", "error": "cannot get document summary"}}}
+    complete = {"result": {"uids": ["111", "222"], "111": partial["result"]["111"],
+                           "222": {"uid": "222", "title": "Also found", "pubdate": "2022"}}}
+    backend.route("eutils.ncbi.nlm.nih.gov", ESUMMARY, [reply(partial), reply(complete)])
+    answer = call(env, "literature_search", query="widgets", sources=["pubmed"])
+    assert answer["ok"] and answer["count"] == 1 and answer["sources"]["pubmed"]["status"] == "partial"  # still used
+    answer = call(env, "literature_search", query="widgets", sources=["pubmed"])  # the same search again
+    assert answer["sources"]["pubmed"] == {"status": "ok", "count": 2} and len(summaries_sent(backend)) == 4
+    answer = call(env, "literature_search", query="widgets", sources=["pubmed"])
+    assert answer["sources"]["pubmed"] == {"status": "ok", "count": 2} and len(summaries_sent(backend)) == 4
+
+
+def test_an_incomplete_ncbi_answer_cached_by_an_earlier_release_is_requested_again(env, monkeypatch):
+    backend = env["backend"]
+    env["use"]()
+    failed = {"result": {"uids": ["5"], "5": {"uid": "5", "error": "cannot get document summary"}}}
+    whole = {"result": {"uids": ["5"], "5": {"uid": "5", "title": "Recovered", "pubdate": "2020"}}}
+    backend.route("eutils.ncbi.nlm.nih.gov", ESUMMARY, [reply(failed), reply(whole)])
+    backend.route("api.openalex.org", "/works/pmid:5", reply(status=404))
+    original_get = transport.Http.get
+    with monkeypatch.context() as earlier:  # the earlier release cached every valid envelope, complete or not
+        earlier.setattr(transport.Http, "get", lambda self, *a, complete=None, **k: original_get(self, *a, **k))
+        first = call(env, "work_lookup", id="pmid:5")
+    assert first["ok"] is False and len(list((env["state"] / "cache").glob("*.json"))) == 1
+    second = call(env, "work_lookup", id="pmid:5")
+    assert second["ok"] and second["work"]["title"] == "Recovered" and len(summaries_sent(backend)) == 2
+    stored = [json.loads(p.read_text(encoding="utf-8"))["value"] for p in (env["state"] / "cache").glob("*.json")]
+    assert stored == [whole]
+
+
+def test_a_merged_citation_count_names_its_provider(env):
+    backend = env["backend"]
+    env["use"]()
+    uncounted = {**OPENALEX_WORK, "cited_by_count": None}
+    backend.route("api.openalex.org", "/works", reply({"results": [uncounted, OPENALEX_OTHER]}))
+    backend.route("api.crossref.org", "/works", reply(crossref([CROSSREF_ITEM, CROSSREF_OTHER])))
+    merged = call(env, "literature_search", query="deep widgets")["results"][0]
+    assert merged["source"] == "openalex" and merged["also_in"] == ["crossref"]
+    assert merged["citation_count"] == 40 and merged["citation_count_source"] == "crossref"
+    backend.route("api.openalex.org", "/works", reply({"results": [OPENALEX_WORK]}))
+    own = call(env, "literature_search", query="deep widgets, counted")["results"][0]
+    assert own["citation_count"] == 42 and "citation_count_source" not in own  # its own provider's count
 
 
 def test_pubmed_core_and_default_source_selection(env):
@@ -431,6 +669,7 @@ def test_pubmed_core_and_default_source_selection(env):
 
 @pytest.mark.parametrize("raw, expected", [
     ("10.1000/ABC", ("doi", "10.1000/abc")), ("https://doi.org/10.1000/abc", ("doi", "10.1000/abc")),
+    ("https://doi.org/10.1000/a%3Bb", ("doi", "10.1000/a;b")),
     ("doi:10.1000/abc", ("doi", "10.1000/abc")), ("W123", ("openalex", "W123")),
     ("https://openalex.org/W123", ("openalex", "W123")), ("PMC9876", ("pmcid", "9876")), ("pmcid:9876", ("pmcid", "9876")),
     ("12345678", ("pmid", "12345678")), ("PMID: 12345678", ("pmid", "12345678")), ("2101.00001", ("arxiv", "2101.00001")),
@@ -477,7 +716,7 @@ def test_work_lookup_falls_through_providers(env):
     backend.route("eutils.ncbi.nlm.nih.gov", "/entrez/eutils/esummary.fcgi", reply({"result": {"uids": ["5"], "5": {"uid": "5", "error": "x"}}}))
     backend.route("api.openalex.org", "/works/pmid:5", reply(OPENALEX_WORK))
     answer = call(env, "work_lookup", id="pmid:5")
-    assert answer["work"]["source"] == "openalex" and answer["sources"]["pubmed"]["status"] == "not_found"
+    assert answer["work"]["source"] == "openalex" and answer["sources"]["pubmed"]["status"] == "bad_response"
 
 
 def test_dois_with_reserved_characters_are_percent_encoded_in_paths(env):
@@ -504,6 +743,41 @@ def test_dois_with_reserved_characters_are_percent_encoded_in_paths(env):
     call(env, "citations", doi=doi)
     assert seen["api.opencitations.net"][0] == f"/index/v2/citation-count/doi:{encoded}"
     assert P.doi_url("10.1000/a#b") == "https://doi.org/10.1000/a%23b"
+    # The emitted link round-trips: decoded once on the way in, so the wire carries the same single encoding.
+    link = P.doi_url(doi)
+    assert link == f"https://doi.org/{encoded}"
+    seen.clear()
+    answer = call(env, "work_lookup", id=link)
+    assert answer["id"] == doi and answer["error"]["code"] == "not_found"
+    assert seen["api.openalex.org"][0].startswith(f"/works/doi:{encoded}?") and seen["api.crossref.org"] == (f"/works/{encoded}", {})
+    assert seen["api.semanticscholar.org"][0].startswith(f"/graph/v1/paper/DOI:{encoded}?")
+    for mode, endpoint in (("citing", "citations"), ("count", "citation-count")):
+        assert call(env, "citations", doi=link.replace("https://", "http://dx."), mode=mode)["doi"] == doi
+        assert seen["api.opencitations.net"][0] == f"/index/v2/{endpoint}/doi:{encoded}"
+    # A bare DOI is literal: its percent sign is part of the DOI and travels as %25.
+    answer = call(env, "work_lookup", id="10.1000/A%28b")
+    assert answer["id"] == "10.1000/a%28b" and seen["api.crossref.org"] == ("/works/10.1000/a%2528b", {})
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("https://doi.org/10.1000/a%28b%29", "10.1000/a(b)"), ("http://dx.doi.org/10.1000/X%2FY", "10.1000/x/y"),
+    ("https://doi.org/10.1000/a%2528b", "10.1000/a%28b"), ("doi:10.1000/a%28b", "10.1000/a%28b"),
+    ("10.1000/a%28b", "10.1000/a%28b"), ("https://doi.org/10.1000/%FF", None), ("https://doi.org/10.1000/a%20b", None),
+])
+def test_doi_links_are_decoded_once_and_bare_dois_are_literal(raw, expected):
+    assert P.clean_doi(raw) == expected
+    if expected:
+        assert P.clean_doi(P.doi_url(expected)) == expected
+
+
+@pytest.mark.parametrize("doi", ["10.1000/../../members", "10.1000/./x", "10.1000/x/..",
+                                 "https://doi.org/10.1000/..%2F..%2Fmembers"])
+def test_dot_segment_dois_are_refused_before_any_provider_request(env, doi):
+    env["use"]()
+    assert P.clean_doi(doi) is None
+    assert call(env, "work_lookup", id=doi)["ok"] is False
+    assert call(env, "citations", doi=doi)["ok"] is False
+    assert not env["backend"].requests
 
 
 def test_citations_modes_and_opencitations_fallback(env):
@@ -524,7 +798,9 @@ def test_citations_modes_and_opencitations_fallback(env):
     backend.route("api.opencitations.net", "/index/v2/citations/doi:10.1000/abc",
                   reply([{"citing": "omid:br/1 doi:10.1000/c1 pmid:1", "cited": "doi:10.1000/abc"}, {"citing": "omid:br/2"}]))
     fallback = call(env, "citations", doi="10.1000/abc", mode="citing")
-    assert fallback["ok"] and fallback["total"] == 1 and fallback["results"] == [{"source": "opencitations", "id": "doi:10.1000/c1",
+    # Two citing works are listed; one is known only by its OMID, so it is counted but cannot be shown as a DOI.
+    assert fallback["ok"] and fallback["total"] == 2 and fallback["without_doi"] == 1 and fallback["count"] == 1
+    assert fallback["results"] == [{"source": "opencitations", "id": "doi:10.1000/c1",
         "title": None, "authors": [], "year": None, "venue": None, "doi": "10.1000/c1", "url": "https://doi.org/10.1000/c1", "abstract": None}]
     assert fallback["sources"]["openalex"]["status"] == "server_error" and fallback["sources"]["opencitations"]["status"] == "ok"
     assert call(env, "citations", doi="10.1000/abc", mode="citing")["ok"]  # the successful fallback is cached

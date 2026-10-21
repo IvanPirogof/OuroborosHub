@@ -3,11 +3,11 @@
     "search"
   ],
   "description": "Search scholarly literature, preprints and open-access copies across public APIs, resolve a work by identifier, and read citation counts and links.",
-  "digest": "cb23ceed2bb2df6fd6ddacb47d3468cf2fb2d77b336f7c183950b5038b483acd",
+  "digest": "26c385392536450f0fefc92c8f5d0cceb5e4534cee7e36e503e140445814f658",
   "install_specs": [
     {
       "kind": "pip",
-      "package": "httpx"
+      "package": "httpx>=0.28.1,<0.29"
     }
   ],
   "name": "science_search",

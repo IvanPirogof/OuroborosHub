@@ -1632,28 +1632,28 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "7d4d2ce0b79981e3a4cb06ed48698f495c98fdd5b7f8c631972fc0fd86088cf8",
-          "size": 7277
+          "sha256": "f356b93025fe5c7ac1dd3fa778e7c3d008f36e5899319d42faafaadb592d2296",
+          "size": 14284
         },
         {
           "path": "plugin.py",
-          "sha256": "394ba106189670cbeccb44452349b3c5b6789371a40e216effacac0a5ef1c276",
-          "size": 30758
+          "sha256": "5a4f988f3c93d9231ce132976989c071943638e867f4ca937d1244c91ab0bb08",
+          "size": 45725
         },
         {
           "path": "tests/test_office_reader.py",
-          "sha256": "2181037a0bedda2990222b2db893f52238e79ac7a50226da53db743fe76ffe1a",
-          "size": 28891
+          "sha256": "f18d46a942aae194ff7f2bbec8a5f3fb3b26315c2d4a90e74eb32748a4c6a1c6",
+          "size": 52489
         }
       ],
       "install_specs": [
         {
           "kind": "pip",
-          "package": "markitdown[docx,pptx,xlsx,xls,outlook]"
+          "package": "markitdown[docx,pptx,xlsx,xls,outlook]>=0.1.8,<0.2"
         },
         {
           "kind": "pip",
-          "package": "openpyxl"
+          "package": "openpyxl>=3.1.5,<3.2"
         }
       ],
       "name": "office_reader",
@@ -1906,39 +1906,39 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "51edebce9053c9dbc5fd65a83928231770e7d2f4ee9235423f85934fec2f5574",
-          "size": 8220
+          "sha256": "e53e835a849e8ced1ee03384b8d5bf34f9eb879967238a907c4dbfb07ab8ebdb",
+          "size": 12493
         },
         {
           "path": "plugin.py",
-          "sha256": "0eff263303523b72e869a4ed00b8c8c1cef3fcb9426f99e45cc06625f5db59e2",
-          "size": 22086
+          "sha256": "23c7437901bdd7f8c231625f94d62369e176f8f15096cf34da4b4d83de6e8ade",
+          "size": 23845
         },
         {
           "path": "providers.py",
-          "sha256": "e7f51c8a9aa50277e8993422a44389f81f2da3e7ab31dc8e73320baa4fff7171",
-          "size": 25585
+          "sha256": "8fbdbc3f7b3892281f485a6f6b338f7c9aef45193e04639caf8cf2ccd1724de4",
+          "size": 29955
         },
         {
           "path": "tests/test_science_search.py",
-          "sha256": "7f8aa533991ad59b491f00c80e5d7ec2c073bd08e8153603b29bbad5f2642ddd",
-          "size": 43607
+          "sha256": "c341ba4b2265f6207ab3ce63505527f3d183d66b4e4729d15a042ca3e026d9d9",
+          "size": 62083
         },
         {
           "path": "tests/test_throttle.py",
-          "sha256": "a279842e9c0a04d6ee759b9ee62db4f2faae78ff40bd2aa3c895333e0403b8ba",
-          "size": 3472
+          "sha256": "ff2927a63283a4e1ba8ffbf6ab60b21ea6c30479a07e601dea0c20db8b104b3b",
+          "size": 3781
         },
         {
           "path": "transport.py",
-          "sha256": "ed3a4aabaaa8eafd0c5892cf7369ac42985397a1256a44c6f2031bfce5619691",
-          "size": 13196
+          "sha256": "831f2baa595958977631b138afca28a12edcb8635ea133d54c260af6e8570589",
+          "size": 14003
         }
       ],
       "install_specs": [
         {
           "kind": "pip",
-          "package": "httpx"
+          "package": "httpx>=0.28.1,<0.29"
         }
       ],
       "name": "science_search",

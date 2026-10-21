@@ -154,6 +154,12 @@ class Cache:
         except (OSError, ValueError, KeyError, TypeError):
             return None
 
+    def discard(self, key: str) -> None:
+        try:
+            self._path(key).unlink(missing_ok=True)
+        except OSError:
+            pass
+
     def put(self, key: str, value: Any) -> None:
         temporary: Optional[pathlib.Path] = None
         try:
@@ -245,18 +251,29 @@ class Http:
     def get(self, source: str, url: str, *, params: Optional[Dict[str, Any]] = None,
             headers: Optional[Dict[str, str]] = None, interval: float = 0.0, ttl: float = 0.0,
             parse: str = "json", cache_key_extra: str = "", validate: Optional[Callable[[Any], None]] = None,
+            complete: Optional[Callable[[Any], bool]] = None,
             request_timeout: float = REQUEST_TIMEOUT_SEC) -> Tuple[Any, bool]:
         """Return (parsed body, from_cache). Credentials never enter the cache key.
 
         ``validate`` inspects the parsed body of an HTTP 200 answer and raises SourceError when the
         provider's envelope is wrong (an error object, a missing container); such bodies are never cached.
+        ``complete`` tells a valid but incomplete body (some requested items missing): it is returned to the
+        caller but not cached. A cached body is checked again by both before use: one stored before a check
+        existed (or under a weaker check) is dropped and requested afresh, never served.
         ``request_timeout`` is the per-read timeout of one request, always cut to the remaining deadline.
         """
         public = {k: v for k, v in (params or {}).items() if k not in {"api_key", "mailto", "email", "tool"}}
         key = json.dumps([source, url, sorted(public.items()), cache_key_extra], sort_keys=True, default=str)
         cached = self.cache.get(key, ttl)
         if cached is not None:
-            return cached, True
+            try:
+                if validate is not None:
+                    validate(cached)
+                if complete is None or complete(cached):
+                    return cached, True
+            except SourceError:
+                pass
+            self.cache.discard(key)
         attempt = 0
         while True:
             self.deadline.check(f"requesting {source}")
@@ -273,7 +290,7 @@ class Http:
                     value = self._parse(source, body, parse)
                     if validate is not None:
                         validate(value)
-                    if ttl > 0:
+                    if ttl > 0 and (complete is None or complete(value)):
                         self.cache.put(key, value)
                     return value, False
                 if 300 <= status < 400:

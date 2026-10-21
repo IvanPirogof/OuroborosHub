@@ -29,7 +29,9 @@ for _ in range(int(sys.argv[3])):
 
 def test_two_processes_share_one_request_pace(tmp_path):
     interval, per_process = 0.25, 4
-    command = [sys.executable, "-I", "-c", WORKER, str(TRANSPORT), str(tmp_path / "throttle"), str(per_process), str(interval)]
+    # -B: isolated mode ignores PYTHONDONTWRITEBYTECODE, and the workers must not leave bytecode beside the skill.
+    command = [sys.executable, "-I", "-B", "-c", WORKER, str(TRANSPORT), str(tmp_path / "throttle"), str(per_process),
+               str(interval)]
     workers = [subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(2)]
     outputs = [worker.communicate(timeout=60) for worker in workers]
     assert all(worker.returncode == 0 for worker in workers), outputs
@@ -58,10 +60,11 @@ def test_lock_covers_interval_and_send_only(tmp_path):
         thread.join(2)
         assert transport._try_lock(handle) is True  # free as soon as the slot exits
         transport._unlock(handle)
-    started = time.monotonic()
+    previous = float((tmp_path / "throttle" / "arxiv.lock").read_text(encoding="utf-8"))  # stored as the holder ended
     with throttle.slot("arxiv", 0.3, deadline):
-        pass
-    assert time.monotonic() - started >= 0.28  # waited for the interval left by the previous slot
+        sent = time.time()
+    # The next request goes out a full interval after the previous one, however late this test got scheduled.
+    assert sent - previous >= 0.3 - 0.005, (previous, sent)
 
 
 def test_waiting_past_the_deadline_is_a_typed_failure_and_releases_the_lock(tmp_path):

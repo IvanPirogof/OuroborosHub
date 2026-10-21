@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from .transport import Http, SourceError
 
@@ -46,13 +46,29 @@ CROSSREF_SELECTABLE = frozenset(
     "update-to updated-by volume".split())
 _TAGS = re.compile(r"<[^>]+>")
 _SPACES = re.compile(r"\s+")
+_DOI_LINK = re.compile(r"^https?://(dx\.)?doi\.org/", re.IGNORECASE)
 
 
 # --------------------------------------------------------------------------- normalization
 
 def clean_doi(value: Any) -> Optional[str]:
+    """A DOI in lower case from a bare DOI, a ``doi:`` form or a doi.org link; None when it is not one.
+
+    A doi.org link is a URL, so its percent escapes are decoded exactly once (a link from ``doi_url`` gives back
+    its DOI); a bare or ``doi:`` DOI is taken literally, so a ``%`` in it stays part of the DOI.
+    """
     text = str(value or "").strip()
-    text = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", text, flags=re.IGNORECASE).strip().lower()
+    link = _DOI_LINK.match(text)
+    if link:
+        try:
+            text = unquote(text[link.end():], errors="strict")
+        except UnicodeDecodeError:  # escapes that are not UTF-8 name no DOI
+            return None
+    else:
+        text = re.sub(r"^doi:", "", text, flags=re.IGNORECASE)
+    text = text.strip().lower()
+    if any(part in {".", ".."} for part in text.split("/")):
+        return None  # HTTP clients normalize these segments instead of looking up the supplied identifier.
     return text if re.fullmatch(r"10\.\d{4,9}/\S+", text) and len(text) <= DOI_CHARS else None
 
 
@@ -279,16 +295,17 @@ def crossref_search(http: Http, query: str, year_from: Optional[int], year_to: O
         filters.append(f"from-pub-date:{year_from}")
     if year_to:
         filters.append(f"until-pub-date:{year_to}")
-    if preprints:  # bioRxiv and medRxiv deposit posted-content through Cold Spring Harbor Laboratory (member 246)
-        filters += ["type:posted-content", "member:246"]
+    if preprints:
+        # bioRxiv and medRxiv deposit posted-content through Cold Spring Harbor Laboratory (member 246) under the
+        # DOI prefix 10.1101. Crossref ANDs different filters, so the server returns exactly those records and
+        # rows/offset count them; a client-side DOI filter would shorten pages and shift offsets.
+        filters += ["type:posted-content", "member:246", "prefix:10.1101"]
     params = _crossref_params(keys, query=query, rows=limit, offset=offset, select=",".join(CROSSREF_SELECT))
     if filters:
         params["filter"] = ",".join(filters)
     data, _ = http.get("crossref", CROSSREF, params=params, interval=INTERVAL["crossref"], ttl=TTL_SEARCH,
                        validate=_crossref_list)
     items = [i for i in data["message"]["items"] if isinstance(i, dict)]
-    if preprints:
-        items = [i for i in items if str(i.get("DOI", "")).lower().startswith("10.1101/")]
     return [crossref_record(i, "biorxiv" if preprints else "crossref") for i in items]
 
 
@@ -376,17 +393,39 @@ def ncbi_record(item: Dict[str, Any], db: str) -> Dict[str, Any]:
                   item.get("fulljournalname") or item.get("source"), doi, url)
 
 
-def _ncbi_summaries(http: Http, db: str, ids: List[str], keys: Dict[str, str]) -> List[Dict[str, Any]]:
+def _ncbi_item(result: Any, uid: str) -> Dict[str, Any]:
+    """The summary NCBI returned for ``uid``, or {} when it returned an item error or nothing for it."""
+    item = _dict(_dict(result).get(uid))
+    return item if item.get("uid") and not item.get("error") else {}
+
+
+def _ncbi_summaries(http: Http, db: str, ids: List[str],
+                    keys: Dict[str, str]) -> tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
+    """Summaries for ``ids`` plus the ids NCBI could not summarize, with its wording.
+
+    An item-level error such as "cannot get document summary" says the summary could not be read, not that the
+    record does not exist, so it is reported as a failure, never as absence. An answer missing any requested
+    summary is used for this call but never cached: asking again after NCBI recovers reads it afresh.
+    """
     params, interval = _ncbi_params(keys, db=db, id=",".join(ids), retmode="json")
     data, _ = http.get("ncbi", f"{EUTILS}/esummary.fcgi", params=params, interval=interval, ttl=TTL_LOOKUP,
-                       validate=_ncbi_summary)
+                       validate=_ncbi_summary,
+                       complete=lambda body: all(_ncbi_item(_dict(body).get("result"), uid) for uid in ids))
     result = data["result"]
-    items = [_dict(result.get(str(uid))) for uid in result["uids"]]
-    return [ncbi_record(item, db) for item in items if item.get("uid") and not item.get("error")]
+    records, failed = [], []
+    for uid in ids:
+        item = _ncbi_item(result, uid)
+        if item:
+            records.append(ncbi_record(item, db))
+        else:
+            failed.append({"id": uid, "message": _scalar(_dict(result.get(uid)).get("error"), 200)
+                           or "no summary in NCBI's answer"})
+    return records, failed
 
 
 def pubmed_search(http: Http, query: str, year_from: Optional[int], year_to: Optional[int], limit: int, offset: int,
-                  keys: Dict[str, str]) -> List[Dict[str, Any]]:
+                  keys: Dict[str, str]) -> tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
+    """PubMed records for one page, and the PMIDs on that page whose summaries NCBI could not return."""
     params, interval = _ncbi_params(keys, db="pubmed", term=query, retmax=limit, retstart=offset, retmode="json",
                                     sort="relevance")
     if year_from or year_to:
@@ -394,19 +433,32 @@ def pubmed_search(http: Http, query: str, year_from: Optional[int], year_to: Opt
     data, _ = http.get("ncbi", f"{EUTILS}/esearch.fcgi", params=params, interval=interval, ttl=TTL_SEARCH,
                        validate=_ncbi_search)
     ids = [str(i) for i in data["esearchresult"]["idlist"]]
-    return _ncbi_summaries(http, "pubmed", ids, keys) if ids else []
+    if not ids:
+        return [], []
+    records, failed = _ncbi_summaries(http, "pubmed", ids, keys)
+    if not records:  # every listed PMID failed: the source failed, it did not find nothing
+        raise SourceError("bad_response", f"NCBI listed {len(ids)} PubMed records but returned none of their "
+                          f"summaries: {failed[0]['message']}")
+    return records, failed
 
 
 def ncbi_work(http: Http, db: str, uid: str, keys: Dict[str, str]) -> Dict[str, Any]:
-    items = _ncbi_summaries(http, db, [uid], keys)
-    if not items:  # a valid summary envelope that lacks this uid, or marks it with an error: NCBI does not know it
-        raise SourceError("not_found", f"NCBI {db} has no record {uid}", status=404)
+    items, failed = _ncbi_summaries(http, db, [uid], keys)
+    if not items:  # retrieval failed for this uid; NCBI did not say that the record does not exist
+        reason = failed[0]["message"] if failed else "no summary in NCBI's answer"
+        raise SourceError("bad_response", f"NCBI {db} returned no summary for {uid}: {reason}")
     return items[0]
 
 
 # --------------------------------------------------------------------------- arXiv
 
 _ATOM = {"a": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+# arXiv reports an error as a valid Atom feed whose single entry has an id under /api/errors (API manual, 3.4).
+ARXIV_ERROR_ID = "arxiv.org/api/errors"
+# A query word is sent bare only when it cannot be read as arXiv query syntax; anything else is sent quoted.
+_ARXIV_PLAIN = re.compile(r"\w[\w.'-]*")
+_ARXIV_RESERVED = {"AND", "OR", "NOT", "ANDNOT", "TO"}
+_ARXIV_TOKENS = re.compile(r'"([^"]*)"|(\S+)')
 
 
 def arxiv_records(text: str) -> List[Dict[str, Any]]:
@@ -419,6 +471,9 @@ def arxiv_records(text: str) -> List[Dict[str, Any]]:
     out = []
     for entry in root.findall("a:entry", _ATOM):
         url = (entry.findtext("a:id", default="", namespaces=_ATOM) or "").strip()
+        if ARXIV_ERROR_ID in url:  # an error report, never a paper, whatever the HTTP status was
+            detail = _trim(entry.findtext("a:summary", default="", namespaces=_ATOM), 200)
+            raise SourceError("bad_response", f"arXiv answered with an error: {detail or url}")
         ident = url.rsplit("/abs/", 1)[-1] if "/abs/" in url else url
         out.append(record("arxiv", f"arXiv:{ident}" if ident else None, entry.findtext("a:title", default="", namespaces=_ATOM),
                           [n.text for n in entry.findall("a:author/a:name", _ATOM)],
@@ -433,10 +488,28 @@ def _arxiv_feed(text: Any) -> None:
     arxiv_records(str(text))  # parse failures and non-feed documents raise bad_response before caching
 
 
+def arxiv_expression(query: str) -> str:
+    """The plain query as arXiv search terms that must all match: ``all:word``, ``all:"quoted phrase"``.
+
+    Operators, field prefixes and other query syntax typed by the user are not interpreted: such words are sent
+    as quoted terms, so ``OR`` or ``au:smith`` is searched as text. Only the characters a quoted term cannot hold
+    (a stray ``"`` and ``\\``) are dropped; other punctuation is kept.
+    """
+    terms = []
+    for phrase, word in _ARXIV_TOKENS.findall(query):
+        text = _SPACES.sub(" ", (phrase or word).replace('"', " ").replace("\\", " ")).strip()
+        if not text:
+            continue
+        bare = not phrase and _ARXIV_PLAIN.fullmatch(text) and text not in _ARXIV_RESERVED
+        terms.append(f"all:{text}" if bare else f'all:"{text}"')
+    return " AND ".join(terms)
+
+
 def arxiv_search(http: Http, query: str, year_from: Optional[int], year_to: Optional[int], limit: int,
                  offset: int) -> List[Dict[str, Any]]:
-    words = [w for w in re.split(r"\s+", query.strip()) if w]
-    expression = " AND ".join(f"all:{w}" for w in words)
+    expression = arxiv_expression(query)
+    if not expression:
+        raise SourceError("bad_request", "the query has no words arXiv can search for")
     if year_from or year_to:
         expression += f" AND submittedDate:[{year_from or 1991}01010000 TO {year_to or 2100}12312359]"
     text, _ = http.get("arxiv", ARXIV, params={"search_query": expression, "start": offset, "max_results": limit},
@@ -485,11 +558,14 @@ def core_search(http: Http, query: str, year_from: Optional[int], year_to: Optio
 # --------------------------------------------------------------------------- OpenCitations
 
 def _oc_dois(items: Any, field: str) -> List[str]:
+    """One DOI per listed work (its first); works known only by other identifiers have none."""
     out = []
     for item in _list(items):
         for token in str(_dict(item).get(field, "")).split():
-            if token.lower().startswith("doi:") and clean_doi(token[4:]):
-                out.append(clean_doi(token[4:]))
+            doi = clean_doi(token[4:]) if token.lower().startswith("doi:") else None
+            if doi:
+                out.append(doi)
+                break
     return out
 
 
@@ -510,9 +586,10 @@ def opencitations_count(http: Http, doi: str) -> int:
     return count
 
 
-def opencitations_list(http: Http, doi: str, mode: str) -> List[str]:
-    """DOIs citing (mode=citing) or cited by (mode=cited) the given DOI."""
+def opencitations_list(http: Http, doi: str, mode: str) -> tuple[List[str], int]:
+    """DOIs citing (mode=citing) or cited by (mode=cited) the given DOI, and how many links OpenCitations listed
+    (works known only by other identifiers have no DOI and are counted but not listed)."""
     endpoint, field = ("citations", "citing") if mode == "citing" else ("references", "cited")
     data, _ = http.get("opencitations", f"{OPENCITATIONS}/{endpoint}/doi:{doi_path(doi)}",
                        interval=INTERVAL["opencitations"], ttl=TTL_CITATIONS, validate=_oc_list)
-    return _oc_dois(data, field)
+    return _oc_dois(data, field), len(data)
