@@ -172,7 +172,7 @@ def relative_path(value, *, allow_root=False):
 
 def validate_entry(entry, categories):
     object_fields(entry, ('schema_version', 'name', 'description', 'category', 'owner', 'version', 'source', 'digest', 'withdrawn'),
-                  ('install_specs', 'when_to_use', 'author', 'type', 'withdrawn_releases'), label='entry')
+                  ('install_specs', 'when_to_use', 'author', 'type', 'withdrawn_releases', 'icon', 'connects'), label='entry')
     schema(entry, 2, 'entry')
     for field in ('name', 'description', 'version'):
         text_field(entry[field], field)
@@ -191,6 +191,19 @@ def validate_entry(entry, categories):
             text_field(entry[field], field)
     if 'type' in entry and entry['type'] not in ('instruction', 'script', 'extension'):
         raise ValueError(f'{name}: invalid type')
+    if 'icon' in entry:
+        text_field(entry['icon'], 'icon')
+        if '/' in entry['icon']:
+            relative_path(entry['icon'])
+            if not entry['icon'].startswith('ui/') or not entry['icon'].endswith('.svg'):
+                raise ValueError('icon must be a host icon name or ui/*.svg')
+        elif not re.fullmatch(r'[a-z][a-z0-9_-]*', entry['icon']):
+            raise ValueError('icon must be a host icon name or ui/*.svg')
+    if 'connects' in entry:
+        connects = entry['connects']
+        if (not isinstance(connects, list) or any(not isinstance(v, str) or not v.strip() for v in connects)
+                or len(set(connects)) != len(connects)):
+            raise ValueError('connects must contain distinct non-empty service names')
     withdrawn = entry['withdrawn']
     if withdrawn is not None:
         object_fields(withdrawn, ('reason', 'at'), label='withdrawn')
@@ -328,6 +341,22 @@ def release_digest(directory, entry):
     return payload_digest(directory, manifest_entry=front.get('entry', ''), manifest_scripts=front.get('scripts'))
 
 
+def connector_metadata(front):
+    """Discovery facts derive from the reviewed manifest, never a second tag list."""
+    facts = {}
+    if front.get('icon'):
+        facts['icon'] = front['icon']
+    services = set()
+    for contribution in front.get('contributes') or []:
+        if isinstance(contribution, dict) and contribution.get('provides') == 'place':
+            destination = contribution.get('destination', '')
+            if isinstance(destination, str) and destination.startswith('vendor:') and destination[7:].strip():
+                services.add(destination[7:])
+    if services:
+        facts['connects'] = sorted(services)
+    return facts
+
+
 def refresh_entry(root, entry):
     """Explicit author operation; an endorsement is never renewed automatically."""
     with source_directory(root, entry) as directory:
@@ -339,6 +368,9 @@ def refresh_entry(root, entry):
             entry['install_specs'] = json.loads(declaration_json(declaration))
         entry['version'] = str(front.get('version', '0.1.0'))
         entry['digest'] = release_digest(directory, entry)
+        for key in ('icon', 'connects'):
+            entry.pop(key, None)
+        entry.update(connector_metadata(front))
     return entry
 
 
@@ -380,6 +412,7 @@ def catalog_row(directory, entry=None):
     for field in ('description', 'version', 'type', 'install_specs', 'when_to_use', 'author'):
         if field in metadata:
             row[field] = metadata[field]
+    row.update(connector_metadata(front))
     row['files'] = []
     for path in payload_files(directory, manifest_entry=front.get('entry', ''), manifest_scripts=front.get('scripts')):
         digest, size = _file_facts(path)
@@ -412,6 +445,11 @@ def build_catalog(root: Path) -> dict:
                 raise ValueError(f"{entry['name']}: release digest mismatch; update the entry and any endorsement")
             if str(read_manifest(directory).get('version', '0.1.0')) != entry['version']:
                 raise ValueError(f"{entry['name']}: entry version must match SKILL.md")
+            facts = connector_metadata(read_manifest(directory))
+            # Optional for older schema-2 publishers; supplied facts must be truthful.
+            for key in ('icon', 'connects'):
+                if key in entry and entry[key] != facts.get(key):
+                    raise ValueError(f"{entry['name']}: {key} must derive from SKILL.md; use --refresh")
     # Retained hosted copies remain deliverable to old clients if a v2 entry is
     # later withdrawn, converted to a git pointer or removed from discovery.
     rows = []

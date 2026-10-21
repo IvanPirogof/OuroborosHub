@@ -24,8 +24,11 @@ presences; the built-in `telegram` is the owner's connection to their own Ourobo
 
 An entry names its GitHub owner, a version, a description, one or two categories,
 a source, a release digest and a withdrawal status. Optional `withdrawn_releases`
-records withdrawn versions by digest. Optional `when_to_use` supplies
-additional discovery text. `install_specs` is generated from the manifest's first
+records withdrawn versions by digest. Optional `icon` names a host icon or a
+local `ui/*.svg` geometry asset. `connects` is derived from `provides: place`
+contributions in the reviewed manifest; older consumers can ignore both fields.
+Optional `when_to_use` supplies additional discovery text. `install_specs` is
+generated from the manifest's first
 nonempty `install_specs`, `install` or `dependencies` value, without normalization.
 
 A source can be hosted here:
@@ -109,9 +112,10 @@ identity along with code and instructions.
    `catalog.json` is generated during validation and publication; it need not be
    included in an entry PR.
 
-`--refresh` updates only the named entry's version, raw dependency declaration and
-release digest. `--digest NAME` prints the digest without changing files. Neither
-command renews Official endorsements. `scripts/build_catalog.py` remains a
+`--refresh` updates only the named entry's version, raw dependency declaration,
+release digest, and manifest-derived `icon`/`connects` fields. `--digest NAME`
+prints the digest without changing files. Neither command renews Official
+endorsements. `scripts/build_catalog.py` remains a
 compatible alias for the generator and its `--check` mode.
 
 ## Update, withdraw or adopt a skill

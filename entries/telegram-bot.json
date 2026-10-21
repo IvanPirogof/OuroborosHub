@@ -2,8 +2,12 @@
   "category": [
     "messaging"
   ],
-  "description": "Public Telegram bot for presences: Ouroboros talks with other people in Telegram, with durable delivery and media staging. To message your own Ouroboros, use the built-in telegram skill.",
-  "digest": "fa3b3af43f738facafb388925612d87f05900d593e637fc8556c664e0b7b2773",
+  "connects": [
+    "Telegram"
+  ],
+  "description": "Telegram bot connector for group and channel places, with typed mentions and replies, durable media delivery, and live place-state holds. Owner chat uses the built-in Telegram bridge.",
+  "digest": "9e258b56d390786a5ac0fd68120af0b270b684d402a51068b99eab9ed058e90c",
+  "icon": "ui/icon.svg",
   "name": "telegram-bot",
   "owner": "ouroboros-agent",
   "schema_version": 2,
@@ -12,6 +16,6 @@
     "path": "skills/telegram-bot"
   },
   "type": "extension",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "withdrawn": null
 }

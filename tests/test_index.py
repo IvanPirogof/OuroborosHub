@@ -4,6 +4,7 @@ Set OUROBOROS_IDENTITY_CORE_ROOT to opt into digest parity with a core checkout.
 """
 from __future__ import annotations
 
+import ast
 import contextlib
 import copy
 import hashlib
@@ -11,11 +12,15 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+import xml.etree.ElementTree as ET
+
+import pytest
 
 from scripts import build_catalog as wrapper
 from scripts import build_index as builder
@@ -127,10 +132,38 @@ class IndexTests(unittest.TestCase):
         self.write('entries/duplicate.json', self.entry)
         with self.assertRaises(ValueError):
             builder.load_hub(self.root)
+
         (self.root / 'entries/duplicate.json').unlink()
         (self.root / 'entries/demo.json').rename(self.root / 'entries/wrong.json')
         with self.assertRaisesRegex(ValueError, 'filename'):
             builder.load_hub(self.root)
+
+    def test_connector_metadata_refresh_validation_and_legacy_projection(self):
+        manifest = self.root / 'skills/demo/SKILL.md'
+        manifest.write_text('---\nversion: v2\nicon: ui/icon.svg\ncontributes:\n'
+                            '  - {id: slack, provides: place, destination: "vendor:Slack"}\n'
+                            '  - {id: mic, provides: stt, destination: "vendor:Speech"}\n---\n', encoding='utf-8')
+        self.assertEqual(builder.main(['--refresh', 'demo'], root=self.root), 0)
+        entry = builder.read_json(self.root / 'entries/demo.json')
+        self.assertEqual((entry['icon'], entry['connects']), ('ui/icon.svg', ['Slack']))
+        builder.validate_entry(entry, {'search'})
+        catalog = builder.build_catalog(self.root)
+        self.assertEqual(catalog['schema_version'], 1)
+        self.assertEqual(catalog['skills'][0]['connects'], ['Slack'])
+        for changes in ({'icon': '../bad.svg'}, {'icon': 'https://bad/icon.svg'},
+                        {'connects': 'Slack'}, {'connects': ['Slack', 'Slack']}, {'connects': [None]}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                builder.validate_entry({**entry, **changes}, {'search'})
+        self.write('entries/demo.json', {**entry, 'connects': ['Other']})
+        with self.assertRaisesRegex(ValueError, 'must derive'):
+            builder.build_catalog(self.root)
+        # An old publisher may omit the new keys; consumers still get derived facts.
+        self.write('entries/demo.json', {k: v for k, v in entry.items() if k not in {'connects', 'icon'}})
+        self.assertEqual(builder.build_catalog(self.root)['skills'][0]['connects'], ['Slack'])
+        manifest.write_text('---\nversion: v3\n---\n', encoding='utf-8')
+        self.assertEqual(builder.main(['--refresh', 'demo'], root=self.root), 0)
+        self.assertNotIn('connects', builder.read_json(self.root / 'entries/demo.json'))
+        self.assertNotIn('icon', builder.build_catalog(self.root)['skills'][0])
 
     def test_endorsements_bind_exact_release_and_recommendations_are_boolean(self):
         endorsement = {'name': 'demo', 'digest': self.entry['digest'], 'recommended': True}
@@ -518,3 +551,65 @@ print(json.dumps([payload_digest(Path(c['path']), manifest_entry=c['front'].get(
             with builder.source_directory(ROOT, entry) as directory:
                 self.assertEqual(declaration_json(entry.get('install_specs')),
                                  declaration_json(manifest_declaration(builder.read_manifest(directory))))
+
+
+CONNECTORS = {"slack-bridge": ("Slack", "slack_"), "telegram-bot": ("Telegram", "telegram_"),
+              "email-presence": ("Email", "email_"), "a2a": ("A2A", "a2a_"), "agentrq-bridge": ("AgentRQ", "rq_")}
+
+
+def exported_names(directory, prefix):
+    names = set()
+    for path in [directory / "plugin.py", *directory.glob("lib/read_tools.py")]:
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                function = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
+                index = 1 if function == "register_json_tool" else 0
+                if function in {"tool", "register_tool", "register_json_tool"} and len(node.args) > index:
+                    arg = node.args[index]
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                        names.add(arg.value)
+            # Dynamic registration descriptors enumerate the same tool names.
+            if isinstance(node, ast.Tuple) and node.elts and isinstance(node.elts[0], ast.Constant):
+                name = node.elts[0].value
+                if isinstance(name, str) and name.startswith(prefix):
+                    names.add(name)
+    return names
+
+
+@pytest.mark.parametrize("name", CONNECTORS)
+def test_every_exported_tool_has_an_effect_and_destination(name):
+    directory = ROOT / "skills" / name
+    manifest = builder.read_manifest(directory)
+    service, prefix = CONNECTORS[name]
+    rows = manifest["tools"]
+    assert {row["name"] for row in rows} == exported_names(directory, prefix)
+    assert len(rows) == len({row["name"] for row in rows})
+    for row in rows:
+        assert row["effect"] in {"read", "message", "write"}
+        target = row["target"]
+        assert isinstance(target, (str, list))
+        for argument in ([target] if isinstance(target, str) else target):
+            assert re.fullmatch(r"[a-z][a-z0-9_]*", argument)
+    places = [row for row in manifest["contributes"] if row["provides"] == "place"]
+    assert len(places) == 1
+    place = places[0]
+    assert place["label"] == service and place["destination"] == "vendor:" + service
+    assert place["scope"] == "account" and place["wakes"]
+    assert "presence" in manifest["permissions"] and "inject_chat" not in manifest["permissions"]
+    assert manifest["icon"] == place["icon"] == "ui/icon.svg"
+    icon = ET.parse(directory / place["icon"]).getroot()
+    assert icon.attrib["viewBox"] == "0 0 24 24"
+    assert "currentColor" in icon.attrib.values()
+    assert all(element.tag.rsplit("}", 1)[-1] in {"svg", "path", "rect", "circle", "line", "polyline", "polygon"} for element in icon.iter())
+    assert not any(key.startswith("on") or key in {"href", "style"} for element in icon.iter() for key in element.attrib)
+
+
+def test_mixed_tools_remain_write_and_email_covers_all_recipients():
+    manifests = {name: {row["name"]: row for row in builder.read_manifest(ROOT / "skills" / name)["tools"]} for name in CONNECTORS}
+    for connector, name in [("slack-bridge", "slack_api"), ("email-presence", "email_read"),
+                            ("email-presence", "email_mailbox"), ("telegram-bot", "telegram_operation")]:
+        assert manifests[connector][name]["effect"] == "write"
+    assert manifests["slack-bridge"]["slack_history"]["effect"] == "read"
+    assert manifests["email-presence"]["email_send"]["effect"] == "message"
+    assert manifests["email-presence"]["email_send"]["target"] == ["to", "cc", "bcc"]

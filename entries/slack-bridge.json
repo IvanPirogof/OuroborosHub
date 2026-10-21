@@ -2,8 +2,12 @@
   "category": [
     "messaging"
   ],
-  "description": "Bidirectional Slack presence transport for Ouroboros using Socket Mode, durable delivery queues, threaded replies, proactive text messages, and inbound file staging.",
-  "digest": "cbacc5b5ef307b458fc30511c39ceb021c20756fe7ef751321e33fcb5fee7eae",
+  "connects": [
+    "Slack"
+  ],
+  "description": "Slack connector for workspace places, with typed conversation facts, durable threaded replies, files, and live place-state delivery holds.",
+  "digest": "e49b193556f65a2cd972ad45f194f544bea2618be4098e9388fcf068dbabf989",
+  "icon": "ui/icon.svg",
   "install_specs": [
     "httpx",
     "websockets"
@@ -16,6 +20,6 @@
     "path": "skills/slack-bridge"
   },
   "type": "extension",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "withdrawn": null
 }

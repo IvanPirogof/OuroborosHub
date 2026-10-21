@@ -2,7 +2,7 @@
 name: telegram-bot
 description: Durable Telegram transport for generic Ouroboros presences, with exact actor and conversation
   provenance, media staging, and provider receipts.
-version: 0.5.1
+version: 0.6.0
 type: extension
 plugin_api: '2.0'
 runtime: python3
@@ -20,7 +20,7 @@ env_from_settings:
 - TELEGRAM_PUBLIC_BOT_TOKEN
 timeout_sec: 60
 when_to_use: The owner wants a reviewed Telegram bot transport for one or more external presence
-  bindings, separate from the native owner-control Telegram bridge.
+  places, separate from the native owner-control Telegram bridge.
 ui_tab:
   tab_id: transport
   title: Telegram Transport
@@ -34,16 +34,11 @@ ui_tab:
       method: POST
       submit_label: Save transport settings
       fields:
-      - name: binding_id
-        label: Presence Binding ID
-        type: text
-        placeholder: 32-character binding id
-        help: Owner-created binding for this Telegram transport (conversation_id=exact id or conversation_id=*).
       - name: management_group_id
         label: Management group ID
         type: text
         placeholder: Optional numeric Telegram group ID
-        help: Marks this room in event facts. Work instructions stay in the behavior profile; no
+        help: Marks this room in event facts. Work instructions stay in place notes; no
           owner permissions are granted.
     - type: poll
       route: status
@@ -112,13 +107,36 @@ ui_tab:
       target: status
 tools:
 - name: telegram_send
+  effect: message
+  target: chat_id
+  conversation: chat_id
+  thread: topic_id
   description: Queue a proactive Telegram text, photo, or document for durable delivery.
 - name: telegram_moderate
+  effect: write
+  target: chat_id
+  conversation: chat_id
   description: Queue exact-message deletion or member restriction, ban, or unban with durable receipts.
 - name: telegram_operation
+  effect: write
+  target: chat_id
+  conversation: chat_id
+  thread: topic_id
   description: Queue an own-message edit or reaction through the Telegram Bot API with durable receipts.
 - name: telegram_receipt
+  effect: read
+  target: []
   description: Inspect delivery state and provider receipts for a queued Telegram operation.
+icon: ui/icon.svg
+contributes:
+  - id: place
+    provides: place
+    label: Telegram
+    destination: vendor:Telegram
+    scope: account
+    source: {route: status, refresh_s: 15}
+    icon: ui/icon.svg
+    wakes: [mention, reply_to_me]
 ---
 
 # Telegram Bot Presence Transport
@@ -144,12 +162,18 @@ It provides:
 
 The payload does not call the owner `/chat/inject` path, allocate synthetic
 internal chats, interpret owner commands, or create prompt envelopes. It uses
-only the reviewed `presence` Host permission. Configure the opaque,
-owner-created binding (an exact conversation or `conversation_id="*"`) as
-`binding_id` in this skill's local `settings.json`; inbound Telegram text is
-never treated as configuration. The adapter submits the actual provider
-conversation facts to the loopback Host and durably polls any deferred work
-before delivering its late text once.
+only the reviewed `presence` Host permission. Connect a Telegram place with the
+bot account ID. On hosts advertising `places_version >= 1`, groups and channels
+are captured without a binding ID; private bot chats are excluded. Suggested
+wakes are explicit mentions and replies to the bot. Typed facts come from
+Telegram entities and reply identities, not text interpretation. Other bots
+carry `from_bot`; own bot echoes are ignored.
+
+Older hosts retain the previous event filtering and receive the already-saved
+`binding_id` from local settings. Deferred references, offsets, staged files and
+delivery identities survive the upgrade. Before each outgoing message part or
+mutation the worker re-reads the place. Silent/Paused or an unavailable lookup
+holds the queued bytes and receipts without consuming retries; Active resumes.
 
 Supported v1 Telegram content is text/caption, photos, documents, edited
 messages, and message-reaction provider facts. Voice/audio bytes are still
@@ -245,7 +269,7 @@ photo/document attachments continue through the existing staging path.
 
 The optional `management_group_id` in the transport settings is a numeric group
 ID, not a secret. Messages in that group carry
-`conversation.configured_room="management_group"`; the reviewed behavior profile
+`conversation.configured_room="management_group"`; the place notes
 interprets this room fact. It grants no owner commands or system-settings access,
 and the adapter does not copy a member roster or classify message intent. For
 all human messages to reach the bot, disable bot privacy mode in BotFather or
