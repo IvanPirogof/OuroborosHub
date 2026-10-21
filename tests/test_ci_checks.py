@@ -38,6 +38,7 @@ class SelectionTests(unittest.TestCase):
             'slack-bridge': {'slack-bridge'}, 'telegram-bot': {'telegram-bot'}, 'keenable': {'keenable'},
             'perplexity': {'perplexity'}, '2gis': {'2gis'}, 'whoop-health': {'whoop-health'}, 'claudexor_quotas': {'widgets'},
             'context-lens': {'widgets'}, 'memory-atlas': {'widgets'}, 'token-usage': {'widgets'},
+            'office_reader': {'office-reader'}, 'science_search': {'science-search'},
         }
         for skill, expected in consumers.items():
             with self.subTest(skill=skill):

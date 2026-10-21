@@ -37,6 +37,11 @@ SUITES = {
     'keenable': {'skills': ['keenable'], 'tests': ['tests/test_keenable_transport.py', 'tests/test_keenable_widget.py'],
                  'shared': ['tests/fixtures/keenable/']},
     'whoop-health': {'skills': ['whoop-health'], 'tests': ['tests/test_whoop_recovery.py']},
+    'office-reader': {'skills': ['office_reader'], 'tests': ['skills/office_reader/tests'],
+                      'dependencies': ['markitdown[docx,pptx,xlsx,xls,outlook]>=0.1.8,<0.2', 'openpyxl>=3.1.5,<3.2',
+                                       'python-docx', 'python-pptx', 'xlwt']},
+    'science-search': {'skills': ['science_search'], 'tests': ['skills/science_search/tests'],
+                       'dependencies': ['httpx>=0.28.1,<0.29']},
 }
 SHARED = {'.github/workflows/catalog-check.yml', 'scripts/ci_checks.py', 'tests/test_ci_checks.py',
           'scripts/build_index.py', 'scripts/release_digest.py',
