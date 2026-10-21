@@ -36,7 +36,7 @@ def test_real_answer_snapshot_prints_numeric_pace_and_partial_cohort(watched_sto
     text = qc.snapshot_text(answer)
     row = next(r for r in answer["groups"] if r["recent_pace"]["accounts_known"])
     pace = row["recent_pace"]
-    assert f"{pace['windows_per_hour']:.3f} account-windows/h" in text
+    assert f"{qc._rate(pace['windows_per_hour'])} account-windows/h" in text  # derived resolution, one decimal
     assert f"{pace['accounts_known']} of {pace['of']}" in text
     assert "watched" in text
     assert "request scope not stated" in text  # no echo is not an all-model guarantee

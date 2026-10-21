@@ -643,8 +643,8 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "83a0da358c1ebbdd59d31b26a9d1c55c9aca552b49a950ce900fb633db3f202f",
-          "size": 78509
+          "sha256": "497551a58806c027b07294b7e0a2c50ce23ed9d805b707e52ae9fc0d1343f203",
+          "size": 79207
         },
         {
           "path": "plugin.py",
@@ -663,8 +663,8 @@
         },
         {
           "path": "quota_context.py",
-          "sha256": "f1f83941681483b2989758fa0523208ba8822b583640e57c87fc62a081486efe",
-          "size": 18394
+          "sha256": "348e8811f5d20d80174c0b6a362c4fbd8c4386f8ee64da967dfa855802692fcb",
+          "size": 19225
         },
         {
           "path": "quota_history.py",
@@ -693,8 +693,8 @@
         },
         {
           "path": "test_backend_repair.py",
-          "sha256": "e4f192f91e009bb7e1d71a52e5d3a87e7ef5cf066288b6351074622abf2d32db",
-          "size": 9406
+          "sha256": "ea95c7200cf887c8eb65d9fedd18b1988fcf123c61a7c95c1951d8f22b5cb127",
+          "size": 9447
         },
         {
           "path": "test_bars.py",
@@ -828,8 +828,13 @@
         },
         {
           "path": "test_semantic_repair.py",
-          "sha256": "11263b9a4cbc1ce03288fe3ed47ef3bf58ab1521461d09fffe211514c4f4843d",
-          "size": 14350
+          "sha256": "4038885dd60251517795b74c694b654e839369dad47525ce33edefe37da8c56e",
+          "size": 14348
+        },
+        {
+          "path": "test_steady_snapshot_text.py",
+          "sha256": "d364313dba184ebae2b3462994c196e0390be16fd5a9f88bcbcb82263eeb0a2d",
+          "size": 3840
         },
         {
           "path": "test_ui_timeline.py",
@@ -845,7 +850,7 @@
       "name": "claudexor_quotas",
       "slug": "claudexor_quotas",
       "type": "extension",
-      "version": "0.12.0",
+      "version": "0.12.1",
       "when_to_use": "The owner wants quota windows, resets and remaining reserve of the authorized Claudexor accounts; or, before choosing executors, the model wants measured reserve by family and limit. Advisory only: never a dispatch guarantee or a pin change."
     },
     {
