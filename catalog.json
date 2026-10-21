@@ -1,7 +1,7 @@
 {
   "description": "Official Ouroboros skills catalog.",
   "name": "OuroborosHub",
-  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/42262fdd5bc716eb81985346341d44efad8c848f",
+  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/ee951f22d37985596140f19f3ffe8b88719b234d",
   "schema_version": 1,
   "skills": [
     {
@@ -301,29 +301,29 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "c0047cf55fc9100c38f7722c786c71965764b37c85476fefa1d7cf112aa9f462",
-          "size": 4903
+          "sha256": "2e77f743a724410a2318a38de31318e74e7bc2c289085376afd0e64da54bbf7e",
+          "size": 6127
         },
         {
           "path": "plugin.py",
-          "sha256": "8be35c3263fb98a4fd079179a39474964355f00dfaa48e0e024b1a011e00ecd1",
-          "size": 26141
+          "sha256": "ca1103bd20ce5092af165bc02ccd55c85a5577549de64a1b91954a85d52a8ef6",
+          "size": 34129
         },
         {
           "path": "test_cache_efficiency.py",
-          "sha256": "b3828410b9d6aecac23a5275159d90696c6909f914b49c0bbd0415a41fc9589c",
-          "size": 27323
+          "sha256": "187d6ea5160ac172ea43cb56acaa05ed09acf997bec82b99094b36aa223c2487",
+          "size": 37795
         },
         {
           "path": "widget.js",
-          "sha256": "1861bf5456808efd5404675016198087ef1142e352d830ed74032a842bdcdb1c",
-          "size": 37806
+          "sha256": "44f1999be42475324ca7b3b0176662086ad4d317ddbc8a4d9a6b712232a507db",
+          "size": 41097
         }
       ],
       "name": "cache_efficiency_snapshot",
       "slug": "cache_efficiency_snapshot",
       "type": "extension",
-      "version": "0.5.1"
+      "version": "0.6.0"
     },
     {
       "description": "Единый календарь владельца — свои локальные календари, Яндекс (CalDAV) и Google (личный OAuth-клиент); события, повторения, свободные окна, служебные события-распорядок, напоминания без модели, виджет День/Неделя.",
