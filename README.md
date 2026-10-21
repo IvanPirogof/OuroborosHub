@@ -1,8 +1,8 @@
 # OuroborosHub
 
 OuroborosHub is a skill source for [Ouroboros Desktop](https://github.com/razzant/ouroboros).
-Skills add tools, widgets, scripts and task-specific instructions. The hub currently
-contains 50 skills; their payloads remain under `skills/<name>/`.
+Skills add tools, widgets, scripts and task-specific instructions. Their payloads
+remain under `skills/<name>/`.
 
 The app presents this repository as two sources: **Ouroboros** contains Official
 releases and defaults to Trusted; **Ouroboros Community** contains the other releases

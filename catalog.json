@@ -334,29 +334,29 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "c0047cf55fc9100c38f7722c786c71965764b37c85476fefa1d7cf112aa9f462",
-          "size": 4903
+          "sha256": "2e77f743a724410a2318a38de31318e74e7bc2c289085376afd0e64da54bbf7e",
+          "size": 6127
         },
         {
           "path": "plugin.py",
-          "sha256": "8be35c3263fb98a4fd079179a39474964355f00dfaa48e0e024b1a011e00ecd1",
-          "size": 26141
+          "sha256": "ca1103bd20ce5092af165bc02ccd55c85a5577549de64a1b91954a85d52a8ef6",
+          "size": 34129
         },
         {
           "path": "test_cache_efficiency.py",
-          "sha256": "b3828410b9d6aecac23a5275159d90696c6909f914b49c0bbd0415a41fc9589c",
-          "size": 27323
+          "sha256": "187d6ea5160ac172ea43cb56acaa05ed09acf997bec82b99094b36aa223c2487",
+          "size": 37795
         },
         {
           "path": "widget.js",
-          "sha256": "1861bf5456808efd5404675016198087ef1142e352d830ed74032a842bdcdb1c",
-          "size": 37806
+          "sha256": "44f1999be42475324ca7b3b0176662086ad4d317ddbc8a4d9a6b712232a507db",
+          "size": 41097
         }
       ],
       "name": "cache_efficiency_snapshot",
       "slug": "cache_efficiency_snapshot",
       "type": "extension",
-      "version": "0.5.1"
+      "version": "0.6.0"
     },
     {
       "description": "Единый календарь владельца — свои локальные календари, Яндекс (CalDAV) и Google (личный OAuth-клиент); события, повторения, свободные окна, служебные события-распорядок, напоминания без модели, виджет День/Неделя.",
@@ -1680,6 +1680,41 @@
       "when_to_use": "User wants to generate or render an image from a text description, right now, inside the web UI. Also saves the image to disk so it can be downloaded."
     },
     {
+      "description": "Read Word, PowerPoint, Excel, legacy XLS, CSV, HTML and Outlook MSG files as one Markdown text, and create new XLSX workbooks.",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "c1d9ce9c415fc6428536296629c24ab0b54b0a4a6baa3449b110f275dd5e3e62",
+          "size": 14597
+        },
+        {
+          "path": "plugin.py",
+          "sha256": "0428ff7770cf53465e7df94ce6e5edc2dc2b396ea0a86eb553ad19e6fbf0e39e",
+          "size": 45722
+        },
+        {
+          "path": "tests/test_office_reader.py",
+          "sha256": "f18d46a942aae194ff7f2bbec8a5f3fb3b26315c2d4a90e74eb32748a4c6a1c6",
+          "size": 52489
+        }
+      ],
+      "install_specs": [
+        {
+          "kind": "pip",
+          "package": "markitdown[docx,pptx,xlsx,xls,outlook]>=0.1.8,<0.2"
+        },
+        {
+          "kind": "pip",
+          "package": "openpyxl>=3.1.5,<3.2"
+        }
+      ],
+      "name": "office_reader",
+      "slug": "office_reader",
+      "type": "extension",
+      "version": "0.1.0",
+      "when_to_use": "The user points at a .pptx, .xls, .html or Outlook .msg file, or wants any office file (.docx, .xlsx, .csv included) as one Markdown text to read, quote or summarize, or asks for a new Excel workbook built from data you already have. For heading-aware DOCX work or DOCX creation use word_tools; for filtering, grouping or aggregating a table use table_tools; for PDF use pdf_tools."
+    },
+    {
       "description": "Read PDF documents page by page and build new PDF files from text or structured answers with Unicode-capable fonts.",
       "files": [
         {
@@ -1917,6 +1952,52 @@
       "type": "extension",
       "version": "0.5.7",
       "when_to_use": "The owner asks about their own medical data — check a new prescription as a second opinion (pharmacogenetics, interactions with the current regimen, monitoring labs), review laboratory results and trends, look up a locus or clinically significant ClinVar findings in their VCF, polygenic scores, longevity findings, sleep and lifestyle metrics, movement toward a health goal, which tests to take next, or a pre-visit summary."
+    },
+    {
+      "description": "Search scholarly literature, preprints and open-access copies across public APIs, resolve a work by identifier, and read citation counts and links.",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "e53e835a849e8ced1ee03384b8d5bf34f9eb879967238a907c4dbfb07ab8ebdb",
+          "size": 12493
+        },
+        {
+          "path": "plugin.py",
+          "sha256": "23c7437901bdd7f8c231625f94d62369e176f8f15096cf34da4b4d83de6e8ade",
+          "size": 23845
+        },
+        {
+          "path": "providers.py",
+          "sha256": "8fbdbc3f7b3892281f485a6f6b338f7c9aef45193e04639caf8cf2ccd1724de4",
+          "size": 29955
+        },
+        {
+          "path": "tests/test_science_search.py",
+          "sha256": "c341ba4b2265f6207ab3ce63505527f3d183d66b4e4729d15a042ca3e026d9d9",
+          "size": 62083
+        },
+        {
+          "path": "tests/test_throttle.py",
+          "sha256": "ff2927a63283a4e1ba8ffbf6ab60b21ea6c30479a07e601dea0c20db8b104b3b",
+          "size": 3781
+        },
+        {
+          "path": "transport.py",
+          "sha256": "831f2baa595958977631b138afca28a12edcb8635ea133d54c260af6e8570589",
+          "size": 14003
+        }
+      ],
+      "install_specs": [
+        {
+          "kind": "pip",
+          "package": "httpx>=0.28.1,<0.29"
+        }
+      ],
+      "name": "science_search",
+      "slug": "science_search",
+      "type": "extension",
+      "version": "0.1.0",
+      "when_to_use": "The user asks for papers, studies, preprints or open-access PDFs on a topic, wants a reference resolved from a DOI, PMID, PMCID, arXiv id or OpenAlex id, or asks how often a paper is cited and by whom. Not for general web search."
     },
     {
       "connects": [
