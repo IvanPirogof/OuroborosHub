@@ -191,7 +191,9 @@ def _state_payload(root: Optional[Path]) -> Dict[str, Any]:
     try:
         from scholion import core
         folders = core.source_config()
-        out.update(profile_dir=str(core.profile_dir()), guide_path=str(_guide_path()),
+        out.update(profile_dir=str(core.profile_dir()),
+                   guide_path=(str(_guide_path()) if _guide_path().is_file()
+                               else "See 'Your first three files' below; a local guide is created during setup."),
                    labs_dir=str(folders.get("labs_docs") or core.raw_dir("lab")),
                    wearables_dir=str(core.raw_dir("wearables")),
                    genome_dir=str(core.genome_dir()))
@@ -399,6 +401,11 @@ def _register_tools(api: Any) -> int:
     for entry in get_tools():
         name = entry.name[len(_PREFIX):] if entry.name.startswith(_PREFIX) else entry.name
         schema: Dict[str, Any] = dict(entry.schema.get("parameters") or {})
+        if name == "recompute" and "stop" in schema.get("properties", {}):
+            # Published 0.7.0's parameter table omitted this boolean; keep
+            # the host-facing schema aligned with the cancellation handler.
+            schema["properties"] = {key: dict(value) for key, value in schema["properties"].items()}
+            schema["properties"]["stop"]["type"] = "boolean"
         timeout = int(getattr(entry, "timeout_sec", 60) or 60)
         api.register_tool(
             name,
