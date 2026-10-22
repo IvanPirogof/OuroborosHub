@@ -133,13 +133,20 @@ The layout it creates:
 
     <data directory>/
       profile/          the distilled state — written by the tools, not by hand
-      raw/lab/          laboratory forms, PDF or DOCX exactly as they arrived
+      raw/lab/          original PDFs or supported CSV/TSV/TXT exports
       raw/wearables/    the export archive from a watch
       genome/           supported genome files; genome_status explains their scope
       work/  archive/
 
 The tab shows the configured laboratory folder, including an external folder
 chosen in its form, and distinguishes synthetic demo data from a local profile.
+Setup also writes a private `START-HERE.md` with the actual paths and next
+steps. It preserves existing files and instructions. Copying a source file is
+not an automatic import: ask for `ingest_labs` or check the supported genetic
+and wearable import operation with `capabilities`/`genome_status`. Do not place
+source reports into the structured profile folder. The container ID is a
+technical identity, distinct from a sample identifier inside a report.
+
 Genomic readiness is separate from laboratory or prescription availability:
 no connected genome does not mean the profile is empty.
 
