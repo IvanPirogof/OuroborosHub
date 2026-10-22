@@ -51,6 +51,9 @@ with a physician, and the package's own safety rules travel inside it
 from __future__ import annotations
 
 import os
+import json
+import hashlib
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -76,6 +79,16 @@ def _adopt_data_root(api: Any) -> Optional[Path]:
     above: every tool call and every route call passes through `register()`
     first, inside the same child that will then do the work.
     """
+    state = Path(api.get_state_dir()).resolve()
+    os.environ["SCHOLION_HUB_STATE"] = str(state)
+    # Route children have a minimal environment. Read this declared, nonsecret
+    # preference through PluginAPI too, so tools, routes and the companion agree.
+    settings = api.get_settings(["SCHOLION_OFFLINE"])
+    saved = _connection(state)
+    if not (os.environ.get("SCHOLION_REPO_DIR") or os.environ.get("SCHOLION_PROFILE_DIR")) and saved:
+        os.environ.update(saved)
+    if settings.get("SCHOLION_OFFLINE") not in (None, ""):
+        os.environ["SCHOLION_OFFLINE"] = str(settings["SCHOLION_OFFLINE"])
     if os.environ.get("SCHOLION_REPO_DIR") or os.environ.get("SCHOLION_PROFILE_DIR"):
         return _data_root()          # the owner has already decided; do not argue
     try:
@@ -84,6 +97,55 @@ def _adopt_data_root(api: Any) -> Optional[Path]:
         return None
     os.environ["SCHOLION_REPO_DIR"] = str(root)
     return root
+
+
+_BOUND_ENV = ("SCHOLION_REPO_DIR", "SCHOLION_PROFILE_DIR", "SCHOLION_GENOME_DIR",
+              "SCHOLION_GENOME_VCF", "SCHOLION_RAW_DIR", "SCHOLION_WORK_DIR",
+              "SCHOLION_WORKSTATION", "SCHOLION_OFFLINE", "SCHOLION_LANG")
+
+
+def _connection(state: Path) -> Dict[str, str]:
+    try:
+        data = json.loads((state / "connection.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    if not isinstance(data, dict) or not data.get("SCHOLION_REPO_DIR"):
+        raise ValueError("The saved Scholion connection is unreadable; it was not replaced.")
+    return {k: str(v) for k, v in data.items() if k in _BOUND_ENV}
+
+
+def _private_json(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".scholion-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _binding() -> Dict[str, str]:
+    from scholion import core
+    out = {k: os.environ[k] for k in _BOUND_ENV if k in os.environ}
+    out["SCHOLION_REPO_DIR"] = str(core.repo_dir().resolve())
+    # Pin the same profile even on a workstation with another active patient.
+    out["SCHOLION_PROFILE_DIR"] = str(core.profile_dir().resolve())
+    return out
+
+
+def _binding_id(binding: Dict[str, str]) -> str:
+    paths = {k: v for k, v in binding.items() if k not in ("SCHOLION_OFFLINE", "SCHOLION_LANG")}
+    return hashlib.sha256(json.dumps(paths, sort_keys=True).encode()).hexdigest()
+
+
+def _save_connection(binding: Dict[str, str]) -> None:
+    state = Path(os.environ["SCHOLION_HUB_STATE"])
+    saved = _connection(state)
+    if saved and _binding_id(saved) != _binding_id(binding):
+        raise ValueError("This installation is already connected to a profile. Its connection was preserved.")
+    _private_json(state / "connection.json", binding)
 
 
 def _data_root() -> Optional[Path]:
@@ -101,7 +163,7 @@ def _profile_ready(root: Optional[Path]) -> bool:
 
 def _guide_path() -> Path:
     from scholion import core
-    base = core.profile_dir() if os.environ.get("SCHOLION_PROFILE_DIR") else core.repo_dir()
+    base = core.repo_dir() if core.profile_dir() == core.repo_dir() / "profile" else core.profile_dir()
     return base / "START-HERE.md"
 
 
@@ -124,7 +186,8 @@ def _prepare_setup_notes(result: Dict[str, Any]) -> None:
     )
     lab_note = (
         "# Laboratory results\n\nPut original PDF forms or supported CSV/TSV/TXT exports "
-        "here. Then explicitly ask the assistant to read this folder with ingest_labs. "
+        "here. Open Labs in the Scholion panel, choose this folder, then refresh it, "
+        "or explicitly ask the assistant to read this folder with ingest_labs. "
         "Copying files alone does not extract results. Originals remain unchanged. "
         "Use the folder form on the Scholion panel to select an existing folder instead.\n"
     )
@@ -141,7 +204,9 @@ def _prepare_setup_notes(result: Dict[str, Any]) -> None:
             (core.repo_dir() / rel).write_text(text, encoding="utf-8")
     guide = (
         "# Start here — Scholion in Ouroboros\n\n"
-        "The Scholion panel shows the current paths. Keep medical files on this computer.\n\n"
+        "Open Widgets > Scholion > Add laboratory results to begin. The panel and "
+        "assistant use the same profile. Settings and data folders shows the current "
+        "paths. Keep medical files on this computer.\n\n"
         f"1. Laboratory results: default folder `{core.raw_dir('lab')}`. Put original PDF "
         "forms or supported CSV/TSV/TXT exports there, then ask the assistant to run "
         "ingest_labs on that folder. The panel's selected laboratory folder takes precedence "
@@ -229,97 +294,14 @@ def _state_payload(root: Optional[Path]) -> Dict[str, Any]:
             out["hint"] = ""
             out["needs_profile"] = False
     except Exception as exc:                     # a broken read is a fact too
+        out["read_error"] = True
         out["hint"] = f"The profile could not be read: {type(exc).__name__}: {exc}"
     return out
 
 
-def _render(root: Optional[Path]) -> Dict[str, Any]:
-    return {
-        "kind": "declarative",
-        "schema_version": 1,
-        "span": 2,
-        "components": [
-            {
-                "type": "poll", "id": "state", "target": _TARGET,
-                "route": "state", "method": "GET",
-                "auto_start": True, "interval_ms": 30000,
-                "label": "Refresh",
-            },
-            {
-                "type": "markdown", "id": "what",
-                "text": (
-                    "**Scholion** reads one person's genome, laboratory history, "
-                    "prescriptions and wearable exports **against each other**, on "
-                    "this machine. Every statement carries where it came from, and "
-                    "a negative answer is qualified by coverage rather than implied "
-                    "by silence.\n\n"
-                    "_Not a medical device. Material for a conversation with a "
-                    "physician, not a diagnosis and not a prescription._"
-                ),
-            },
-            {
-                "type": "callout", "id": "hint", "target": _TARGET,
-                "tone": "info", "path": "hint",
-            },
-            {
-                "type": "kv", "id": "where", "target": _TARGET,
-                "title": "Your data",
-                "fields": [
-                    {"label": "Data directory", "path": "data_dir"},
-                    {"label": "Profile directory", "path": "profile_dir"},
-                    {"label": "Container ID", "path": "subject_id"},
-                    {"label": "Data type", "path": "data_kind"},
-                    {"label": "Setup instructions", "path": "guide_path"},
-                    {"label": "Laboratory forms go here", "path": "labs_dir"},
-                    {"label": "Genome files go here", "path": "genome_dir"},
-                    {"label": "Wearable exports go here", "path": "wearables_dir"},
-                    {"label": "Lab markers loaded", "path": "markers"},
-                    {"label": "Prescriptions", "path": "medications"},
-                    {"label": "Genome", "path": "genome"},
-                ],
-            },
-            {
-                # Shown only while there is nothing there. A button offering to
-                # create what exists is a small untruth, and the directory it
-                # would create is the one holding the person's medical record.
-                "type": "action", "id": "create", "target": _TARGET,
-                "condition_key": "needs_profile",
-                "route": "init", "method": "POST",
-                "label": "Create the data directory",
-                "busy_label": "Creating…",
-                "fields": [],
-            },
-            {
-                "type": "markdown", "id": "howto",
-                "text": (
-                    "### Your first three files\n\n"
-                    "1. **Laboratory results** — original PDFs or supported CSV/TSV/TXT exports, into the laboratory folder shown above. "
-                    "Then ask the assistant to read them (`ingest_labs`).\n"
-                    "2. **Genome** — use the genome folder shown above. Ask `genome_status` which analyses "
-                    "your VCF or consumer array export supports; an array or exome cannot replace a whole-genome input for PGS. "
-                    "The folder's README describes input preparation.\n"
-                    "3. **Wearable export** — the original device archive, into the wearable folder shown above. "
-                    "Ask the assistant to check the supported import operation.\n\n"
-                    "**Copying files does not import or analyse them automatically.** "
-                    "Do not put source reports into the structured profile directory. "
-                    "The setup instructions shown above explain the folders.\n\n"
-                    "Analysis runs locally. Tool results enter the host conversation and follow its "
-                    "model/provider settings. Optional identifier lookups are described in the skill. "
-                    "If your laboratory files already live in a folder of their own, point at it "
-                    "below instead of copying them."
-                ),
-            },
-            {
-                "type": "form", "id": "folder", "target": _TARGET,
-                "route": "folder", "method": "POST",
-                "label": "Use a folder I already have",
-                "submit_label": "Use this folder for laboratory forms",
-                "fields": [
-                    {"name": "path", "label": "Absolute path to the folder", "required": True},
-                ],
-            },
-        ],
-    }
+def _render() -> Dict[str, Any]:
+    return {"kind": "module", "entry": "widget.js", "start": "auto",
+            "appearance": "host", "span": 2, "max_height": 1600}
 
 
 # --- routes ---------------------------------------------------------------
@@ -341,8 +323,14 @@ async def _payload_of(request) -> Dict[str, Any]:
 
 
 def _make_routes(api: Any, root: Optional[Path]):
-    async def state(_request):
-        return _json(_state_payload(root))
+    async def state(request):
+        from scholion import i18n
+        lang = getattr(request, "query_params", {}).get("lang", "en")
+        i18n.set_lang(lang)
+        out = _state_payload(_data_root())
+        out["messages"] = {k[4:]: v for k, v in i18n.messages(lang).items() if k.startswith("hub.")}
+        out["lang"] = lang if lang in i18n.available() else "en"
+        return _json(out)
 
     async def init(_request):
         """Create the layout — because a person pressed a button.
@@ -360,6 +348,7 @@ def _make_routes(api: Any, root: Optional[Path]):
             out = store.init_profile()
             if out.get("ok"):
                 _prepare_setup_notes(out)
+                _save_connection(_binding())
         except Exception as exc:
             return _json({"ok": False, "error": f"{type(exc).__name__}: {exc}"}, 500)
         out = dict(out or {})
@@ -390,6 +379,112 @@ def _make_routes(api: Any, root: Optional[Path]):
         return _json(out)
 
     return state, init, folder
+
+
+def _web_routes(api: Any):
+    async def connect(request):
+        """Preview first; only a matching explicit confirmation selects a profile."""
+        payload = await _payload_of(request)
+        from scholion import core, container
+        try:
+            path = Path(str(payload.get("path") or "")).expanduser()
+            if not path.is_absolute():
+                raise ValueError("Choose an absolute folder path.")
+            path = path.resolve(strict=True)
+            profile = path / "profile" if (path / "profile" / "index.md").is_file() else path
+            if not (profile / "index.md").is_file() or not (profile / "labs.json").is_file():
+                raise ValueError("No Scholion profile was found in this folder. The current profile was preserved.")
+            # Reading a preview does not initialise or rewrite the chosen folder.
+            binding = _binding()
+            binding.update(SCHOLION_REPO_DIR=str(profile.parent), SCHOLION_PROFILE_DIR=str(profile))
+            token = _binding_id(binding)
+            if payload.get("confirm") != token:
+                return _json({"ok": True, "preview": True, "profile": str(profile), "confirm": token})
+            _save_connection(binding)
+            os.environ.update(binding)
+            core.reset_cache()
+            container.ensure()
+            return _json({"ok": True, **_state_payload(core.repo_dir())})
+        except (OSError, ValueError) as exc:
+            return _json({"ok": False, "error": str(exc)}, 400)
+
+    async def launch(_request):
+        try:
+            if not _profile_ready(_data_root()):
+                return _json({"ok": False, "error": "Create or connect a profile first."}, 409)
+            _save_connection(_binding())
+            return _json({"ok": True, "binding": _binding_id(_binding())})
+        except (OSError, ValueError) as exc:
+            return _json({"ok": False, "error": str(exc)}, 409)
+
+    async def choose(_request):
+        from scholion.folder_picker import choose as pick
+        import asyncio
+        return _json(await asyncio.to_thread(pick, "Scholion"))
+
+    async def web(request):
+        """One private loopback backend, reached only via the host's authenticated bridge."""
+        import asyncio
+        from http.client import HTTPConnection, HTTPException
+        from urllib.parse import urlsplit
+
+        path = request.query_params.get("path", "/")
+        parsed = urlsplit(path)
+        if (not path.startswith("/") or path.startswith("//") or parsed.netloc or parsed.scheme
+                or parsed.fragment or any(c in path for c in "\r\n\\") or ".." in parsed.path.split("/")):
+            return _json({"error": "Invalid local route."}, 400)
+        if parsed.path == "/api/use":
+            return _json({"error": "This panel and the assistant are pinned to the same profile."}, 409)
+        expected = _binding_id(_binding())
+        supplied = request.headers.get("X-Scholion-Profile")
+        if request.method == "GET":
+            supplied = supplied or request.query_params.get("binding")
+        if supplied != expected:
+            return _json({"error": "The profile connection changed. Reopen Scholion before continuing."}, 409)
+        conn = None
+        try:
+            info = json.loads((Path(api.get_state_dir()) / "web-runtime.json").read_text(encoding="utf-8"))
+            if info.get("binding") != expected:
+                raise ValueError("The web panel and assistant do not have the same profile.")
+            port = int(info["port"])
+            if not 0 < port < 65536:
+                raise ValueError("Invalid local web port.")
+            conn = HTTPConnection("127.0.0.1", port, timeout=5)
+            body = await request.body()
+            headers = {"X-Scholion-Bridge": info["token"], "Content-Type": request.headers.get("content-type", "application/json")}
+            if request.headers.get("range"):
+                headers["Range"] = request.headers["range"]
+            await asyncio.to_thread(conn.request, request.method, path, body=body, headers=headers)
+            # Bound connection setup, not an explicitly requested laboratory
+            # import. The host owns request cancellation and child cleanup.
+            if conn.sock is not None:
+                conn.sock.settimeout(None)
+            reply = await asyncio.to_thread(conn.getresponse)
+        except (OSError, ValueError, KeyError, HTTPException) as exc:
+            if conn is not None:
+                conn.close()
+            return _json({"error": "The local Scholion panel is starting or unavailable. Try again.",
+                          "detail": type(exc).__name__}, 503)
+        from starlette.responses import Response, StreamingResponse
+        response_headers = {k: v for k, v in reply.getheaders() if k.lower() in
+                            ("content-type", "content-disposition", "content-length", "content-range", "accept-ranges")}
+        response_headers["Cache-Control"] = "no-store"
+        if request.method == "HEAD":
+            conn.close()
+            return Response(status_code=reply.status, headers=response_headers)
+
+        async def stream():
+            try:
+                while True:
+                    chunk = await asyncio.to_thread(reply.read, 65536)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                conn.close()
+        return StreamingResponse(stream(), status_code=reply.status, headers=response_headers)
+
+    return connect, launch, choose, web
 
 
 # --- registration ---------------------------------------------------------
@@ -448,8 +543,14 @@ def register(api: Any) -> None:
         api.register_route("state", state, methods=("GET",))
         api.register_route("init", init, methods=("POST",))
         api.register_route("folder", folder, methods=("POST",))
-        api.register_ui_tab(_TAB, "Scholion", icon="🧬", render=_render(root))
-        api.log("info", f"scholion: {tools} tools, onboarding tab, data at {root}")
+        connect, launch, choose, web = _web_routes(api)
+        api.register_route("connect", connect, methods=("POST",))
+        api.register_route("launch", launch, methods=("POST",))
+        api.register_route("choose", choose, methods=("POST",))
+        api.register_route("web", web, methods=("GET", "POST", "HEAD"))
+        api.register_companion_process("web")
+        api.register_ui_tab(_TAB, "Scholion", icon="🧬", render=_render())
+        api.log("info", f"scholion: {tools} tools and embedded web panel, data at {root}")
     except Exception as exc:
         api.log("warning", f"scholion: {tools} tools, no onboarding surface "
                            f"({type(exc).__name__}: {exc})")

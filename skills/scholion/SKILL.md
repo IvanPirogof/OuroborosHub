@@ -1,17 +1,33 @@
 ---
 name: scholion
 description: Local second-opinion layer over the owner's own medical data — genome (VCF), laboratory history, prescriptions, wearables. 40 tools; answers carry provenance and say what the data cannot support. Not a medical device.
-version: 0.7.0
+version: 0.7.1
 type: extension
 runtime: python3
 entry: plugin.py
 plugin_api: "2.0"
 os: any
-permissions: [tool, fs, net, subprocess, widget, route]
-env_from_settings: []
+permissions: [tool, fs, net, subprocess, widget, route, companion_process, read_settings]
+env_from_settings: [SCHOLION_OFFLINE]
+companion_processes:
+  - name: web
+    command: [python3, web_companion.py]
+    runtime: python3
+    restart_policy: on_failure
+    max_restarts: 3
+ui_tab:
+  tab_id: start
+  title: Scholion
+  render:
+    kind: module
+    entry: widget.js
+    start: auto
+    appearance: host
+    span: 2
+    max_height: 1600
 install_specs:
   - kind: pip
-    package: scholion>=0.7.0
+    package: scholion>=0.7.1
 when_to_use: The owner asks about their own medical data — check a new prescription as a second opinion (pharmacogenetics, interactions with the current regimen, monitoring labs), review laboratory results and trends, look up a locus or clinically significant ClinVar findings in their VCF, polygenic scores, longevity findings, sleep and lifestyle metrics, movement toward a health goal, which tests to take next, or a pre-visit summary.
 timeout_sec: 120
 ---
@@ -117,60 +133,42 @@ of which is a secret. The full instructions are in
 
 ## Setup
 
-Nothing to type. The host installs Scholion 0.7.0 or newer in the skill's isolated
-environment (install_specs), and enabling the skill adds a **Scholion** tab to
-the Widgets page. That tab is the answer to
-the first question a new owner has — where their files go:
+Open **Widgets → Scholion**. Choose **Create my profile**, or expand
+**I already use Scholion** and choose the existing data/profile folder. The
+connection is previewed before you confirm it; originals are not copied. This
+installation then keeps that connection across restarts. It does not silently
+switch an already connected profile to another person's folder.
 
-- it names the data directory the host gave this skill, and the exact folder
-  for laboratory forms and for the genome;
-- a button lays out that directory — empty templates plus a README in every
-  folder saying what belongs in it. It never overwrites anything that exists;
-- if the owner's files already live somewhere, a field points at that folder
-  instead of copying them.
+**Open Scholion** shows the installed product's own web interface inside the
+widget: radar, laboratory history, body systems, genome/PGS, longevity and
+lifestyle. **Add laboratory results** opens the laboratory screen, with the
+native folder choice and a manual-path fallback, then explicit import. Genetic
+and wearable inputs use the product's supported connection/import operations;
+copying a file alone does not analyse it. Missing genome data does not block
+laboratory or prescription work. Source paths and the technical container ID
+are available under **Settings and data folders**, rather than filling the
+welcome screen. English is the default; the start screen and product support
+Russian too.
 
-The layout it creates:
+The host supervises `web_companion.py`. It waits for the person's selection,
+then binds a dynamically assigned **loopback** port. The module widget uses the
+host's authenticated fetch bridge, not direct browser requests to localhost.
+The private loopback credential is created by the software; no account or key
+is requested from the person. Both paths load the same installed Scholion and
+saved profile connection. An old widget refuses requests after that connection
+changes; it never falls back to a different server on port 1521. Disabling the
+plugin stops the companion; reopening the UI does not create another profile.
 
-    <data directory>/
-      profile/          the distilled state — written by the tools, not by hand
-      raw/lab/          original PDFs or supported CSV/TSV/TXT exports
-      raw/wearables/    the export archive from a watch
-      genome/           supported genome files; genome_status explains their scope
-      work/  archive/
+The visual interface is a human surface. Its explicit confirmations and
+background operations do not add write permissions to model tools. The
+agent's `recompute` start remains unavailable as documented above. Source links and file downloads use the host's own external-link and download
+bridges. No model is required for local analysis, although the
+host's own first-run model setup may still cover its main interface.
 
-The tab shows the configured laboratory folder, including an external folder
-chosen in its form, and distinguishes synthetic demo data from a local profile.
-Setup also writes a private `START-HERE.md` with the actual paths and next
-steps. It preserves existing files and instructions. Copying a source file is
-not an automatic import: ask for `ingest_labs` or check the supported genetic
-and wearable import operation with `capabilities`/`genome_status`. Do not place
-source reports into the structured profile folder. The container ID is a
-technical identity, distinct from a sample identifier inside a report.
-
-Genomic readiness is separate from laboratory or prescription availability:
-no connected genome does not mean the profile is empty.
-
-The agent should point the owner at that tab rather than at a shell: on this
-host the CLI the rest of this file mentions may not be on anybody's PATH.
-
-To look around before bringing real data, the owner can run
-`scholion init --demo` — a fictional person, deliberately imperfect. To keep the
-data somewhere else, set `SCHOLION_REPO_DIR` (whole layout) or
-`SCHOLION_PROFILE_DIR` (profile only) in the host environment; either one is
-respected and the skill will not move anything.
-
-## Network and privacy
-
-The local analysis requires no Scholion key or account and sends no telemetry.
-Optional reference lookups send the requested identifiers: drug names
-(RxNorm/RxClass/CPIC, plus a translation service for non-Latin spellings),
-variant or gene identifiers (Ensembl), and score identifiers (PGS Catalog).
-Explicit reference preparation can also download public catalogue files.
-The package asks PyPI at most once a day whether a newer build is out. `SCHOLION_OFFLINE=1` disables Scholion's online lookups and version
-check; local analyses remain available. It does not disable the host's model
-requests or dependency installation. The plugin does not upload the source
-medical files; returned tool results become part of the host conversation,
-whose processing follows the selected model/provider settings.
+`SCHOLION_OFFLINE=1` disables Scholion lookups, not the host's model requests or
+dependency installation. Returned tool results follow the host conversation's
+model/provider settings. The plugin needs Scholion 0.7.1 or newer; the host
+installs it in the skill's isolated dependency environment.
 
 ## Safety rules
 
