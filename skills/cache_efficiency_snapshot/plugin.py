@@ -254,8 +254,16 @@ def _session_from_usage_event(row: Mapping[str, Any], receipt: Mapping[str, Any]
         shaped["input_token_usage"] = row["input_token_usage"]
     record = _normalize_record(shaped)
     if record is not None:
-        record.update(identity=_session_identity(run_id), token_facts=True)
+        # ``normalized``: the event carries the core's input-token split (an object, nulls
+        # included), the only evidence that outranks legacy counters; see ``_evidence_rank``.
+        record.update(identity=_session_identity(run_id), token_facts=True,
+                      normalized=isinstance(row.get("input_token_usage"), Mapping))
     return record
+
+
+def _evidence_rank(session: Mapping[str, Any]) -> int:
+    """Evidence of one run: normalized split (2) > legacy usage event (1) > ledger event, tokenless (0)."""
+    return 2 if session.get("normalized") else 1 if session.get("token_facts") else 0
 
 
 def _session_from_ledger_event(row: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
@@ -289,8 +297,9 @@ class UsageEventsCache:
     and each is read once, inside a bounded mtime window. Records are keyed by
     call identity, so the rotation seam (a tail already read from the live file
     and then met again inside the new archive) never counts a request twice.
-    Sessions are keyed by run: a usage event's tokens replace a ledger event's
-    unknowns, never the reverse.
+    Sessions are keyed by run and kept by evidence rank (``_evidence_rank``): a
+    later event replaces the kept one only with strictly higher evidence, never
+    the reverse and never by merging fields; equal rank keeps the first event.
     """
 
     def __init__(self) -> None:
@@ -433,7 +442,7 @@ class UsageEventsCache:
 
     def _add_session(self, record: Dict[str, Any], *, from_usage: bool) -> None:
         current = self.sessions.get(record["identity"])
-        if current is not None and (current["token_facts"] or not record["token_facts"]):
+        if current is not None and _evidence_rank(record) <= _evidence_rank(current):
             self.raw_stats["duplicate_events_skipped"] += 1
             return
         self.sessions[record["identity"]] = record
