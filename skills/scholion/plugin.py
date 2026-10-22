@@ -395,7 +395,15 @@ def _make_routes(api: Any, root: Optional[Path]):
 # --- registration ---------------------------------------------------------
 
 def _register_tools(api: Any) -> int:
+    import scholion
     from scholion.ouroboros_tools import get_tools  # installed via install_specs
+
+    # The host adds isolated dependencies to sys.path for this call. Workers
+    # launched with `sys.executable -m scholion` also need that same installed
+    # package on PYTHONPATH; it is not installed into the host interpreter.
+    installed_site = str(Path(scholion.__file__).resolve().parent.parent)
+    inherited = [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]
+    os.environ["PYTHONPATH"] = os.pathsep.join([installed_site] + [p for p in inherited if p != installed_site])
 
     count = 0
     for entry in get_tools():

@@ -3,7 +3,7 @@
     "health"
   ],
   "description": "Local second-opinion layer over the owner's own medical data — genome (VCF), laboratory history, prescriptions, wearables. 40 tools; answers carry provenance and say what the data cannot support. Not a medical device.",
-  "digest": "6c76a4861bc65a9d10d8be57aa2ea0bda667afea9baed08312b15373a2c49a54",
+  "digest": "edce45421959f79d2646ceca592e5702737591bd04335da1045b0ed604186b51",
   "install_specs": [
     {
       "kind": "pip",
