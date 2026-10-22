@@ -2,8 +2,8 @@
   "category": [
     "documents"
   ],
-  "description": "Universal Google Workspace integration for Google Sheets, Docs, and Drive via Service Account authentication.",
-  "digest": "01b531c2383f443eeeb8cb597530e96c712223b471150c10bbb673e0ccba4454",
+  "description": "Universal Google Workspace integration for Google Sheets, Docs, Drive, Slides and Calendar via explicit OAuth or Service Account authentication.",
+  "digest": "f7332f5fc9bb2d84e98a71bd594de62f8fc3ee215cba7e72a9a8988be73e20b3",
   "install_specs": [
     "httpx>=0.24.0",
     "cryptography>=41.0.0"
@@ -16,6 +16,6 @@
     "path": "skills/google-workspace"
   },
   "type": "extension",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "withdrawn": null
 }
