@@ -1,6 +1,6 @@
 ---
 name: cache_efficiency_snapshot
-version: 0.6.0
+version: 0.6.1
 title: Cache Efficiency Snapshot
 description: Interactive cache observability dashboard over the event log with token-weighted read rates, separate request and session counts, measurement coverage, code-version marks, and Canvas charts.
 type: extension
@@ -93,6 +93,14 @@ rotated archive is read once. Records are keyed by call identity, so a request
 met in the live tail and again inside the archive it rotated into counts once.
 Sessions are keyed by run, so a run met as a usage event and as a ledger event
 counts once, with the usage event's tokens.
+A run may emit several session usage events (for example a failed review, then a
+recovered one). Each run keeps one session, chosen by evidence: a normalized
+`input_token_usage` object (nulls included) beats a legacy-counter usage event,
+which beats a ledger event without tokens. A later event replaces the kept one only
+with strictly higher evidence; fields are never merged, summed or filled across
+events, and equal evidence keeps the first event. Two different normalized splits
+of one run are not reconciled: the first is kept and the other is counted as a
+skipped duplicate.
 Requests, sessions and starts are kept for the last seven days (the archive
 window). `ALL` therefore means all retained records, not a replay of older
 history. Diagnostics disclose archives read, duplicates skipped, sessions

@@ -500,6 +500,138 @@ def test_a_usage_event_supplies_the_tokens_of_a_recorded_session(tmp_path: Path,
     assert meta["raw_stats"]["duplicate_events_skipped"] == (1 if usage_first else 0)
 
 
+# A run can emit several ``llm_usage`` session events: an early failed one without the
+# normalized split, a later recovered one with it. Evidence ranks per run:
+# normalized ``input_token_usage`` > legacy counters / tokenless usage event > ledger event.
+# Equal rank keeps the first event; a lower rank never replaces or fills a higher one.
+
+RUN = "run-recovered"
+
+
+def _legacy_unknown(**values: Any) -> Dict[str, Any]:
+    """A failed review's session event: Claude route, legacy counters, no normalized split."""
+    return session_event(route="claude", run_id=RUN, prompt_tokens=4, cached_tokens=248987,
+                         cache_write_tokens=None, **values)
+
+
+def _normalized(total: Any = 20488, read: Any = 12738, write: Any = 7746, **values: Any) -> Dict[str, Any]:
+    return session_event(route="claude", run_id=RUN, prompt_tokens=4, cached_tokens=248987,
+                         input_token_usage=measurement(total, read, write), **values)
+
+
+def _read_session(tmp_path: Path, *rows: Dict[str, Any]):
+    live = tmp_path / "logs" / "events.jsonl"
+    write_rows(live, *rows)
+    records, meta = UsageEventsCache().update(live, tmp_path / "archive", now=NOW)
+    sessions = [r for r in records if r["kind"] == "subscription_session"]
+    return records, sessions, meta
+
+
+def test_later_normalized_split_replaces_an_earlier_legacy_event_of_the_same_run(tmp_path: Path) -> None:
+    records, sessions, meta = _read_session(
+        tmp_path, _legacy_unknown(ts=(NOW - timedelta(minutes=9)).isoformat()),
+        _normalized(ts=(NOW - timedelta(minutes=5)).isoformat()))
+    assert len(records) == 1 and len(sessions) == 1  # one run, one session, never summed
+    session = sessions[0]
+    assert session["identity"] == session_key(RUN) and session["token_facts"] is True
+    assert (session["prompt_tokens"], session["cached_tokens"], session["cache_write_tokens"]) == (20488, 12738, 7746)
+    assert session["measured"] is True and session["uncached_tokens"] == 20488 - 12738
+    assert meta["raw_stats"]["duplicate_events_skipped"] == 0
+    analytics = calculate_analytics(records, timeframe="1H", now=NOW)
+    summary = analytics["summary"]
+    assert (summary["session_count"], summary["request_count"]) == (1, 0)
+    assert (summary["prompt_tokens"], summary["cached_tokens"]) == (20488, 12738)
+    assert (summary["eligible_prompt_tokens"], summary["eligible_cached_tokens"]) == (20488, 12738)
+    assert summary["cache_read_rate"] == round(12738 / 20488 * 100, 2)
+    assert (summary["unknown_total_records"], summary["unknown_read_records"]) == (0, 0)
+    assert analytics["quality"]["sessions_without_usage_event"] == 0
+
+
+def test_later_legacy_event_never_replaces_or_downgrades_a_normalized_split(tmp_path: Path) -> None:
+    for legacy in (_legacy_unknown(ts=(NOW - timedelta(minutes=5)).isoformat()),
+                   # a legacy Codex counter pair is measured, still not authoritative over the split
+                   session_event(route="codex", run_id=RUN, ts=(NOW - timedelta(minutes=5)).isoformat())):
+        records, sessions, meta = _read_session(tmp_path, _normalized(ts=(NOW - timedelta(minutes=9)).isoformat()), legacy)
+        assert len(sessions) == 1
+        assert (sessions[0]["prompt_tokens"], sessions[0]["cached_tokens"], sessions[0]["cache_write_tokens"]) == (20488, 12738, 7746)
+        assert meta["raw_stats"]["duplicate_events_skipped"] == 1
+        assert calculate_analytics(records, timeframe="1H", now=NOW)["summary"]["session_count"] == 1
+
+
+def test_authoritative_nulls_of_a_normalized_split_are_not_filled_from_legacy_counters(tmp_path: Path) -> None:
+    unknown_write = _normalized(20488, 12738, None)
+    codex_legacy = session_event(route="codex", run_id=RUN, prompt_tokens=999, cached_tokens=111, cache_write_tokens=5)
+    for rows in ((unknown_write, codex_legacy), (codex_legacy, unknown_write)):
+        records, sessions, meta = _read_session(tmp_path, *rows)
+        assert len(sessions) == 1
+        # Either order: the normalized split wins, its null write stays null, nothing is borrowed.
+        assert (sessions[0]["prompt_tokens"], sessions[0]["cached_tokens"], sessions[0]["cache_write_tokens"]) == (20488, 12738, None)
+    all_null = _normalized(None, None, None)
+    records, sessions, _ = _read_session(tmp_path, all_null, codex_legacy)
+    assert (sessions[0]["prompt_tokens"], sessions[0]["cached_tokens"], sessions[0]["measured"]) == (None, None, False)
+    assert sessions[0]["token_facts"] is True  # unknown tokens, but the run does have a usage event
+    assert calculate_analytics(records, timeframe="1H", now=NOW)["quality"]["sessions_without_usage_event"] == 0
+
+
+@pytest.mark.parametrize("malformed", [None, [], "unavailable"])
+def test_a_malformed_split_is_not_normalized_evidence(tmp_path: Path, malformed: Any) -> None:
+    # Present but not an object: stays an authoritative-unknown legacy-rank event (first wins).
+    records, sessions, _ = _read_session(
+        tmp_path, _legacy_unknown(), _normalized(), session_event(route="claude", run_id=RUN, input_token_usage=malformed))
+    assert len(sessions) == 1 and sessions[0]["prompt_tokens"] == 20488
+    records, sessions, _ = _read_session(
+        tmp_path, session_event(route="claude", run_id=RUN, input_token_usage=malformed), _normalized())
+    assert len(sessions) == 1 and sessions[0]["prompt_tokens"] == 20488  # a later valid split still supersedes
+
+
+def test_equal_rank_events_of_one_run_keep_the_first_as_before(tmp_path: Path) -> None:
+    # Two legacy events: first wins. Two normalized events: first wins (a materially different
+    # later split is reported in the skill notes, never merged or summed).
+    records, sessions, meta = _read_session(
+        tmp_path, session_event(route="codex", run_id=RUN, prompt_tokens=100, cached_tokens=40),
+        session_event(route="codex", run_id=RUN, prompt_tokens=900, cached_tokens=800))
+    assert [s["prompt_tokens"] for s in sessions] == [100] and meta["raw_stats"]["duplicate_events_skipped"] == 1
+    records, sessions, meta = _read_session(tmp_path, _normalized(100, 40, 1), _normalized(900, 800, 2),
+                                            _normalized(None, None, None))
+    assert [(s["prompt_tokens"], s["cached_tokens"]) for s in sessions] == [(100, 40)]
+    assert meta["raw_stats"]["duplicate_events_skipped"] == 2
+
+
+def test_evidence_order_survives_ledger_events_archives_and_incremental_reads(tmp_path: Path) -> None:
+    live, archive_dir = tmp_path / "logs" / "events.jsonl", tmp_path / "archive"
+    write_rows(archive_dir / "events_20260911T100000.jsonl", ledger_event(run_id=RUN, route="claude"),
+               _legacy_unknown(ts=(NOW - timedelta(minutes=9)).isoformat()))
+    cache = UsageEventsCache()
+    first, _ = cache.update(live, archive_dir, now=NOW)
+    assert [(r["prompt_tokens"], r["token_facts"]) for r in first] == [(None, True)]
+    write_rows(live, _normalized(ts=(NOW - timedelta(minutes=5)).isoformat()), ledger_event(run_id=RUN, route="claude"))
+    records, meta = cache.update(live, archive_dir, now=NOW)
+    assert len(records) == 1 and records[0]["prompt_tokens"] == 20488 and records[0]["cache_write_tokens"] == 7746
+    append_rows(live, _legacy_unknown(), _normalized(1, 0, 0, ts=(NOW - timedelta(minutes=4)).isoformat()))
+    records, meta = cache.update(live, archive_dir, now=NOW)  # later, lower or equal rank: nothing changes
+    assert len(records) == 1 and records[0]["prompt_tokens"] == 20488
+    assert calculate_analytics(records, timeframe="1H", now=NOW)["summary"]["session_count"] == 1
+
+
+def test_route_reports_the_recovered_session_once_with_normalized_tokens(tmp_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    early, late = ((now - timedelta(minutes=m)).isoformat() for m in (9, 5))
+    write_rows(tmp_path / "logs" / "events.jsonl", _legacy_unknown(ts=early), ledger_event(ts=early, run_id=RUN, route="claude"),
+               _normalized(ts=late), event(ts=late, prompt_tokens=100, cached_tokens=90))
+    api = MockAPI(tmp_path)
+    register(api)
+    try:
+        response = api.routes["data"]({"query_params": {"timeframe": "1H"}})
+        summary = response["summary"]
+        assert (summary["request_count"], summary["session_count"]) == (1, 1)
+        assert (summary["eligible_prompt_tokens"], summary["eligible_cached_tokens"]) == (20488 + 100, 12738 + 90)
+        assert response["quality"]["sessions_without_usage_event"] == 0
+        sessions = [m for m in response["models"] if m["kind"] == "subscription_session"]
+        assert [(m["prompt_tokens"], m["cached_tokens"], m["measured_records"]) for m in sessions] == [(20488, 12738, 1)]
+    finally:
+        api.unload_fn()
+
+
 def test_code_marks_are_first_boots_on_a_new_commit(tmp_path: Path) -> None:
     live = tmp_path / "logs" / "events.jsonl"
     write_rows(live, boot("a" * 40, 200), boot("a" * 40, 50, pid=2), boot("b" * 40, 45),
