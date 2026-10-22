@@ -30,12 +30,13 @@ Honesty about permissions, in one place:
   case writes nowhere else. Declared because the owner may point
   ``SCHOLION_REPO_DIR`` or a folder of laboratory forms anywhere they like,
   and then the package does write outside the skill's state directory.
-- ``net`` — two named lookups, both opt-in by usage: resolving a drug
-  that the local knowledge base does not carry (RxNorm/RxClass/CPIC, plus a
-  translation service for non-Latin drug names) and rsID lookups (Ensembl);
-  and a third, the package's name to PyPI at most once a day, to say whether a
-  newer build is out. No key, no account, no telemetry; SCHOLION_OFFLINE=1
-  disables all of it.
+- ``net`` — optional reference lookups send drug, gene, variant or score
+  identifiers (RxNorm/RxClass/CPIC, Ensembl, PGS Catalog and a translation
+  service for non-Latin drug names). Explicit reference preparation can
+  download public catalogue files. PyPI is asked at most once a day whether
+  a newer build is out. No Scholion key, account or telemetry;
+  SCHOLION_OFFLINE=1 disables Scholion's network operations, not the host's
+  model requests or dependency installation.
 - ``subprocess`` — the package starts local programs when they are installed:
   ``bcftools`` for the genome, ``pdftotext`` / ``pdftoppm`` / ``tesseract`` for
   laboratory forms. It does NOT start pip here: this host installs the package,
@@ -94,7 +95,8 @@ def _data_root() -> Optional[Path]:
 
 
 def _profile_ready(root: Optional[Path]) -> bool:
-    return bool(root) and (root / "profile" / "index.md").exists()
+    from scholion import core
+    return (core.profile_dir() / "index.md").exists()
 
 
 # --- what the tab shows ---------------------------------------------------
@@ -111,19 +113,28 @@ def _state_payload(root: Optional[Path]) -> Dict[str, Any]:
         "markers": "—",
         "medications": "—",
         "genome": "—",
+        "subject_id": "not initialised",
+        "data_kind": "not initialised",
         "hint": (
             "No data directory yet. Press «Create the data directory» below: it "
             "writes empty templates and a README into every folder, and touches "
             "nothing that already exists."
         ),
     }
-    if not ready:
-        return out
     try:
+        from scholion import core
+        folders = core.source_config()
+        out.update(profile_dir=str(core.profile_dir()),
+                   labs_dir=str(folders.get("labs_docs") or core.raw_dir("lab")),
+                   genome_dir=str(core.genome_dir()))
+        if not ready:
+            return out
         from scholion import engine
         o = engine.overview()
-        out["markers"] = o.get("markers_total", 0)
-        out["medications"] = o.get("medications_count", 0)
+        out["markers"] = o.get("markers_total", "—")
+        out["medications"] = o.get("medications_count", "—")
+        out["subject_id"] = o.get("subject_id") or "unknown"
+        out["data_kind"] = "synthetic demo" if o.get("synthetic") else "local profile"
         # `genome` is a report and is always present; the product reads its
         # `ready` flag, and so does this. Testing the dict itself said
         # «connected» over an empty directory — the exact shape of wrong answer
@@ -133,10 +144,11 @@ def _state_payload(root: Optional[Path]) -> Dict[str, Any]:
         gaps = o.get("genome_gaps") or []
         if not connected:
             out["hint"] = (
-                "The directory is ready and empty. Drop laboratory PDFs into "
-                f"{out['labs_dir']} and a full VCF (GRCh38, bgzipped, with its "
-                f".tbi index) into {out['genome_dir']}; each folder holds a "
-                "README that says what belongs in it."
+                "The profile is available; no genome is connected. Existing "
+                "laboratory, prescription and wearable records remain available. "
+                "Add laboratory PDFs to the folder shown above, or choose an "
+                "existing folder below. Ask genome_status about the supported "
+                "genome inputs and the analyses each input can support."
             )
             out["needs_profile"] = False
         elif gaps:
@@ -184,8 +196,11 @@ def _render(root: Optional[Path]) -> Dict[str, Any]:
                 "title": "Your data",
                 "fields": [
                     {"label": "Data directory", "path": "data_dir"},
+                    {"label": "Profile directory", "path": "profile_dir"},
+                    {"label": "Container ID", "path": "subject_id"},
+                    {"label": "Data type", "path": "data_kind"},
                     {"label": "Laboratory forms go here", "path": "labs_dir"},
-                    {"label": "Genome (VCF) goes here", "path": "genome_dir"},
+                    {"label": "Genome files go here", "path": "genome_dir"},
                     {"label": "Lab markers loaded", "path": "markers"},
                     {"label": "Prescriptions", "path": "medications"},
                     {"label": "Genome", "path": "genome"},
@@ -206,13 +221,16 @@ def _render(root: Optional[Path]) -> Dict[str, Any]:
                 "type": "markdown", "id": "howto",
                 "text": (
                     "### Your first three files\n\n"
-                    f"1. **Laboratory forms** — PDF or DOCX exactly as they arrived, into `{data_dir}/raw/lab/`. "
+                    "1. **Laboratory forms** — PDF or DOCX exactly as they arrived, into the laboratory folder shown above. "
                     "Then ask the assistant to read them (`ingest_labs`).\n"
-                    f"2. **Genome** — a full VCF against GRCh38, bgzipped, with its `.tbi` index, into `{data_dir}/genome/`. "
-                    "A consumer array export is not a full VCF; `genome/README.md` in that folder says how to prepare one.\n"
+                    "2. **Genome** — use the genome folder shown above. Ask `genome_status` which analyses "
+                    "your VCF or consumer array export supports; an array or exome cannot replace a whole-genome input for PGS. "
+                    "The folder's README describes input preparation.\n"
                     f"3. **Wearable export** — the archive your watch's site gives you, into `{data_dir}/raw/wearables/`.\n\n"
-                    "Nothing is uploaded anywhere. If your files already live in a folder of "
-                    "their own, point at it below instead of copying them."
+                    "Analysis runs locally. Tool results enter the host conversation and follow its "
+                    "model/provider settings. Optional identifier lookups are described in the skill. "
+                    "If your laboratory files already live in a folder of their own, point at it "
+                    "below instead of copying them."
                 ),
             },
             {
@@ -339,7 +357,7 @@ def register(api: Any) -> None:
         api.register_route("state", state, methods=("GET",))
         api.register_route("init", init, methods=("POST",))
         api.register_route("folder", folder, methods=("POST",))
-        api.register_ui_tab(_TAB, "Scholion", icon="heart", render=_render(root))
+        api.register_ui_tab(_TAB, "Scholion", icon="🧬", render=_render(root))
         api.log("info", f"scholion: {tools} tools, onboarding tab, data at {root}")
     except Exception as exc:
         api.log("warning", f"scholion: {tools} tools, no onboarding surface "
