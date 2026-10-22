@@ -182,8 +182,14 @@ def test_calendar_scope_gets_its_own_token_and_base_fingerprint_is_unchanged():
         scopes_seen.append(_jwt_scope(assertion))
         return httpx.Response(200, json={"access_token": f"token-{len(scopes_seen)}", "expires_in": 3600})
 
+    import hashlib
     base_fp = _compute_credential_fingerprint(VALID_SA_INFO_DICT, subject=None)
     calendar_fp = _compute_credential_fingerprint(VALID_SA_INFO_DICT, subject=None, scopes=CALENDAR_SCOPES)
+    # The 0.2.x formula, spelled out: base-scope cache keys must not change.
+    key_sha = hashlib.sha256(VALID_SA_INFO_DICT["private_key"].encode("utf-8")).hexdigest()[:16]
+    legacy = (f"{VALID_SA_INFO_DICT['project_id']}:{VALID_SA_INFO_DICT['client_email']}:"
+              f"{VALID_SA_INFO_DICT['private_key_id']}:{key_sha}:")
+    assert base_fp == hashlib.sha256(legacy.encode("utf-8")).hexdigest()
     assert _compute_credential_fingerprint(VALID_SA_INFO_DICT, subject=None, scopes=GOOGLE_SCOPES) == base_fp
     assert calendar_fp != base_fp
     _TOKEN_CACHE.pop(base_fp, None)

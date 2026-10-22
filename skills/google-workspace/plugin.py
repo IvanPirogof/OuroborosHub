@@ -450,7 +450,7 @@ def register(api: PluginAPI) -> None:
     register_tool(
         name="workspace_request",
         handler=_make_workspace_request(api),
-        description="Call any Drive v3, Docs v1, Sheets v4, Slides v1 or Calendar v3 REST operation with the selected identity. Supply a relative API path, query and JSON body; Google enforces scopes and permissions. Examples: hide a slide with slides POST presentations/ID:batchUpdate and an updateSlideProperties request (fields 'isSkipped'); attach a Drive file with calendar PATCH calendars/primary/events/EVENT_ID, query supportsAttachments=true and the event's full attachments list. No automatic retry after transport errors.",
+        description="Call any Drive v3, Docs v1, Sheets v4, Slides v1 or Calendar v3 REST operation with the selected identity. Supply a relative API path, query and JSON body; Google enforces scopes and permissions. Examples: hide a slide with slides POST presentations/ID:batchUpdate and an updateSlideProperties request (fields 'isSkipped'); attach a Drive file with calendar PATCH calendars/primary/events/EVENT_ID, query supportsAttachments=true and the event's full attachments list, only when the event shows organizer.self or guestsCanModify true, then read it back. calendars/primary is the OAuth user's calendar; a service account must use the ID of a calendar shared with it. No automatic retry after transport errors.",
         schema={"type": "object", "properties": {
             "service": {"type": "string", "enum": ["drive", "docs", "sheets", "slides", "calendar"]},
             "method": {"type": "string", "description": "HTTP method, e.g. GET, POST, PATCH, PUT, DELETE."},

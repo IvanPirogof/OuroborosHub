@@ -30,7 +30,8 @@ This skill uses **pure REST via `httpx` and `cryptography`** rather than the off
 
 Enable Google Drive, Docs and Sheets APIs in the Google Cloud project used by
 your chosen credential route, plus Slides and Calendar when you call them. A
-disabled API returns Google's `SERVICE_DISABLED` error naming the project. For
+disabled API returns a Google error that names the project and links to enabling
+the API. For
 user OAuth that is the OAuth client's project; for a service account, its own
 project. Configure secrets under **Settings → Secrets** and
 grant only the keys for that route to this skill. Secrets belong to the host's
@@ -43,7 +44,8 @@ granted settings, never the skill's folder or template settings form.
    launch consent, sign in, switch accounts or request new scopes. Grant the
    scopes for the APIs you will call: `drive`, `documents` and `spreadsheets`
    for the file tools, Slides calls work with `drive` or `presentations`, and
-   Calendar calls need `calendar.events` (events) or `calendar`.
+   Calendar calls need a Calendar scope: `calendar.events` or `calendar` to change
+   events; read-only Calendar scopes are enough for reading.
 2. Configure and grant `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and
    `GOOGLE_OAUTH_REFRESH_TOKEN`. These three optional manifest keys form the
    renewable route together. Updating a skill payload requires current review and
@@ -78,8 +80,10 @@ operational tools do not infer delegation from an email address.
 A service account requests the `spreadsheets`, `documents` and `drive` scopes for
 Drive, Docs, Sheets and Slides calls, and only the `calendar` scope for Calendar
 calls, so a delegation entry authorized for the original scopes keeps working.
-Without delegation it sees only calendars shared with its `client_email` and
-cannot invite attendees.
+Operational tools never use delegation, so a service account sees only calendars
+shared with its `client_email`, its own `calendars/primary` is an empty calendar
+of its own, and it cannot invite attendees. Use `auth_mode="oauth"` to work in a
+user's calendar.
 
 ---
 
@@ -94,7 +98,7 @@ cannot invite attendees.
 - **Parameters**: Standard HTTP method, API-relative path, query object, and optional JSON body. Provider operations and permissions are decided by the caller and Google; this tool adds no operation allowlist. Percent-encode calendar IDs that contain `#` or `/` (for example `calendars/team%23x%40group.calendar.google.com/events`); `primary` needs no encoding.
 - **Examples**: `service="drive", method="GET", path="files/ID", query={"fields":"id,name,capabilities"}`; `service="drive", method="POST", path="files/ID/permissions", json_body={"type":"user","role":"reader","emailAddress":"reader@example.com"}`; `service="docs", method="POST", path="documents/ID:batchUpdate", json_body={"requests":[...]}`.
 - **Slides**: read slide IDs and their skip state with `service="slides", method="GET", path="presentations/ID", query={"fields":"slides(objectId,slideProperties/isSkipped)"}`. Hide a slide in presentation mode with `method="POST", path="presentations/ID:batchUpdate", json_body={"requests":[{"updateSlideProperties":{"objectId":"SLIDE_ID","slideProperties":{"isSkipped":true},"fields":"isSkipped"}}]}`; send `false` to show it again.
-- **Calendar**: list upcoming events with `service="calendar", method="GET", path="calendars/primary/events", query={"q":"Friday","timeMin":"2026-10-26T00:00:00Z","singleEvents":"true","orderBy":"startTime"}`. A meeting link is in `conferenceData.entryPoints`, `hangoutLink`, `location` or `description`, depending on how it was added. Attach a Drive file with `method="PATCH", path="calendars/primary/events/EVENT_ID", query={"supportsAttachments":"true"}, json_body={"attachments":[...existing attachments..., {"fileUrl":"https://drive.google.com/open?id=FILE_ID","title":"Deck","mimeType":"application/vnd.google-apps.presentation"}]}`. PATCH replaces the whole `attachments` list, so read the event first and send the existing entries too. With `singleEvents=true` each occurrence of a recurring event has its own ID, so changing one occurrence leaves the series alone. Only the organizer, an editor of the event's calendar, or a guest of an event that allows guests to modify it can change it; a file needs its own sharing for guests to open it.
+- **Calendar**: with `auth_mode="oauth"`, `calendars/primary` is the signed-in user's calendar; with a service account use the ID of a calendar shared with it, because its own `primary` is empty. List upcoming events with `service="calendar", method="GET", path="calendars/primary/events", query={"q":"Friday","timeMin":"2026-10-26T00:00:00Z","singleEvents":"true","orderBy":"startTime"}`. A meeting link is in `conferenceData.entryPoints`, `hangoutLink`, `location` or `description`, depending on how it was added. Attach a Drive file with `method="PATCH", path="calendars/primary/events/EVENT_ID", query={"supportsAttachments":"true"}, json_body={"attachments":[...existing attachments..., {"fileUrl":"<the file's webViewLink>","title":"Deck","mimeType":"application/vnd.google-apps.presentation"}]}`; the file tools return that link as `url`. PATCH replaces the whole `attachments` list, so read the event first and send the existing entries too. With `singleEvents=true` each occurrence of a recurring event has its own ID, so changing one occurrence leaves the series alone. Change an event only when the GET shows `organizer.self` or `guestsCanModify` true, or when you edit a calendar you can write to: a guest without that right may change only their own copy, which other guests never see. Read the event back after the PATCH to confirm. A file needs its own sharing for guests to open it.
 - **Returns**: `status_code` plus the provider `data` for JSON, `text` for a text response, or just the status for an empty response. Use the existing download/export/upload tools for binary artifacts. Query fields, pagination and write preconditions follow the provider API.
 
 All existing tool names remain available. Their resource ID parameters accept

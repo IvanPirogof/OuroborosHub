@@ -257,6 +257,26 @@ def test_service_account_asks_for_calendar_scope_only_on_calendar_calls(monkeypa
                       ("www.googleapis.com", "Bearer calendar-token"), ("docs.googleapis.com", "Bearer base-token")]
 
 
+def test_service_account_calendar_401_refreshes_with_the_calendar_scope(monkeypatch):
+    requested = []
+
+    def fake_token(**kwargs):
+        requested.append((kwargs.get("scopes"), kwargs.get("force_refresh")))
+        return "fresh-calendar" if kwargs.get("force_refresh") else "stale-calendar"
+
+    monkeypatch.setattr(client_module, "get_access_token", fake_token)
+
+    def respond(request):
+        if request.headers["Authorization"] == "Bearer stale-calendar":
+            return httpx.Response(401, json={"error": {"message": "Expired"}})
+        return httpx.Response(200, json={"items": []})
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as http:
+        with GoogleWorkspaceClient(raw_sa_info="fixture", http_client=http) as client:
+            assert client.workspace_request("calendar", "GET", "calendars/primary/events")["data"] == {"items": []}
+    assert requested == [(auth.CALENDAR_SCOPES, False), (auth.CALENDAR_SCOPES, True)]
+
+
 def test_unknown_service_is_rejected_before_any_request():
     def respond(request):
         raise AssertionError("no request expected")
