@@ -1,7 +1,7 @@
 {
   "description": "Official Ouroboros skills catalog.",
   "name": "OuroborosHub",
-  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/4bba9a5fa9103fd39cb7063fde1c9507485d5d95",
+  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/8cabcaebb00e3a15c23b224255c77ff2f47096c9",
   "schema_version": 1,
   "skills": [
     {
@@ -1932,25 +1932,35 @@
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "9f7596869f2eee3a7e08c2100c1139d188dfd9677719358d3279c23a1857e325",
-          "size": 10147
+          "sha256": "116cb35bbcf4aeceb2a96156207ccee385af8cd9e872728f1998e9e35a834d86",
+          "size": 9855
         },
         {
           "path": "plugin.py",
-          "sha256": "37db08c720a32dcc164441d8275a612b6e7687a7dabf1f6e141cb61f7e5bc73e",
-          "size": 23016
+          "sha256": "b6d7f048a3c2f4c8f416608f913eafbaafc411eeef610c8d6dde9a6e00492089",
+          "size": 27706
+        },
+        {
+          "path": "web_companion.py",
+          "sha256": "be31d046028e5474649e58dd14a2f2dbf106d63374961b3f234a33428ba39933",
+          "size": 2586
+        },
+        {
+          "path": "widget.js",
+          "sha256": "280a34ab1df2fd419422d298369dfacc4ebb55a970657931ecae8a543aee0093",
+          "size": 13421
         }
       ],
       "install_specs": [
         {
           "kind": "pip",
-          "package": "scholion>=0.7.0"
+          "package": "scholion>=0.7.1"
         }
       ],
       "name": "scholion",
       "slug": "scholion",
       "type": "extension",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "when_to_use": "The owner asks about their own medical data — check a new prescription as a second opinion (pharmacogenetics, interactions with the current regimen, monitoring labs), review laboratory results and trends, look up a locus or clinically significant ClinVar findings in their VCF, polygenic scores, longevity findings, sleep and lifestyle metrics, movement toward a health goal, which tests to take next, or a pre-visit summary."
     },
     {
