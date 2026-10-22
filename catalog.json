@@ -1,7 +1,7 @@
 {
   "description": "Official Ouroboros skills catalog.",
   "name": "OuroborosHub",
-  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/c7da9d2648601b843b53f6eafda5c80799564de7",
+  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/7779d3f20163a100b72570dcd485a0811a85e150",
   "schema_version": 1,
   "skills": [
     {
@@ -1928,29 +1928,29 @@
       "when_to_use": "Пользователь просит у «Операционного директора» Сбера бизнес-сведения — есть ли ограничения на счетах, задолженность, готовые справки, бизнес-карты, профиль организации, доверенности, операции, балансы, обороты, сводку по банку и т.п. (без технических кодов разделов)."
     },
     {
-      "description": "Local second-opinion layer over the owner's own medical data — genome (VCF), laboratory history, prescriptions, wearables. 35 tools; answers carry provenance and say what the data cannot support. Not a medical device.",
+      "description": "Local second-opinion layer over the owner's own medical data — genome (VCF), laboratory history, prescriptions, wearables. 40 tools; answers carry provenance and say what the data cannot support. Not a medical device.",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "86e9769888b1347ad07b4ad2d2f1d1a047206b71fe85abfbc6fe6e5215b63698",
-          "size": 7578
+          "sha256": "829b1d746819d8515dec9d4c017221dac13f46cac06cd57419497a1278f638b2",
+          "size": 9698
         },
         {
           "path": "plugin.py",
-          "sha256": "d33be0cf2b803528937614f77157664fde507e3290fc5bf1e1c5ff4fd0db6acb",
-          "size": 16073
+          "sha256": "1ef3cb21e4e49edabb9bd03fd9d199295813248f6791f6feb0649905ca819286",
+          "size": 17245
         }
       ],
       "install_specs": [
         {
           "kind": "pip",
-          "package": "scholion"
+          "package": "scholion>=0.7.0"
         }
       ],
       "name": "scholion",
       "slug": "scholion",
       "type": "extension",
-      "version": "0.5.7",
+      "version": "0.7.0",
       "when_to_use": "The owner asks about their own medical data — check a new prescription as a second opinion (pharmacogenetics, interactions with the current regimen, monitoring labs), review laboratory results and trends, look up a locus or clinically significant ClinVar findings in their VCF, polygenic scores, longevity findings, sleep and lifestyle metrics, movement toward a health goal, which tests to take next, or a pre-visit summary."
     },
     {
