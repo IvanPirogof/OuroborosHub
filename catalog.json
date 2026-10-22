@@ -1,7 +1,7 @@
 {
   "description": "Official Ouroboros skills catalog.",
   "name": "OuroborosHub",
-  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/539b5d83b8be27a9add1f0865583bab371421aa4",
+  "raw_base_url": "https://raw.githubusercontent.com/razzant/OuroborosHub/c7da9d2648601b843b53f6eafda5c80799564de7",
   "schema_version": 1,
   "skills": [
     {
@@ -1252,17 +1252,17 @@
       "version": "0.1.1"
     },
     {
-      "description": "Universal Google Workspace integration for Google Sheets, Docs, and Drive via Service Account authentication.",
+      "description": "Universal Google Workspace integration for Google Sheets, Docs, Drive, Slides and Calendar via explicit OAuth or Service Account authentication.",
       "files": [
         {
           "path": "README.md",
-          "sha256": "d725054d026c0668b5760c174afd88281a5d3f3d30067cfec45c79c68624626c",
-          "size": 15476
+          "sha256": "553a8f50d0416e13e55f6094e8f08fabbcfb1d62257e1d3f980382741b8678f9",
+          "size": 18962
         },
         {
           "path": "SKILL.md",
-          "sha256": "aa6f4a7fd93aba603061095e068e2323c54a014c3826e05bd3f4e2c160700e8d",
-          "size": 4342
+          "sha256": "d7b7afcfe5a76f40e3e967f9f3fe57ff6588866be92c7ef4a1d0176cf64205d7",
+          "size": 5391
         },
         {
           "path": "__init__.py",
@@ -1271,18 +1271,18 @@
         },
         {
           "path": "auth.py",
-          "sha256": "48b0f0fd96078cd902ca1a0c4993e11a37f7b9c6950d650b0cb465fcde6c96aa",
-          "size": 10674
+          "sha256": "3d25caf14ab1596c14e248bf9e0a8ad1a0f08e4a21ac0036ce3c6243907902b8",
+          "size": 11340
         },
         {
           "path": "client.py",
-          "sha256": "96766f7cbb864ca8d999db2b92c4837da8ccf2cd4e67786e4b71431fdd2f4e4d",
-          "size": 30058
+          "sha256": "992404e76b32cb5812f23563ecf94027be6621377440809b34377fac904471eb",
+          "size": 30697
         },
         {
           "path": "plugin.py",
-          "sha256": "c225c7c102e0ae28267d727c07258914f0bec15eeea099e8acd638c48756eed6",
-          "size": 38093
+          "sha256": "360bffe739aaf1078094d9faed12c34e61d0cf5fc9017b21e82d75616bdaf62e",
+          "size": 38776
         },
         {
           "path": "results.py",
@@ -1306,8 +1306,8 @@
         },
         {
           "path": "tests/test_google_workspace.py",
-          "sha256": "e0fe212264457341b0e00d95cc58e9b12469255bbe277dc089a800022cf8d604",
-          "size": 32653
+          "sha256": "04fbd2015e286eacdce8f5a1660891044a59db4d79306101bb152bc43941492c",
+          "size": 35142
         },
         {
           "path": "tests/test_isolated_signing.py",
@@ -1321,8 +1321,8 @@
         },
         {
           "path": "tests/test_user_oauth.py",
-          "sha256": "baa70320368a763ff07c1f09f7415bc901cafb6a8c1c2fad5c84512306de8c23",
-          "size": 11569
+          "sha256": "ed24717be8e9546a3a6cfc2161425c532f686a91fdd24e5e11557c216aae2e75",
+          "size": 15965
         },
         {
           "path": "tests/workspace_fixtures.py",
@@ -1337,7 +1337,7 @@
       "name": "google-workspace",
       "slug": "google-workspace",
       "type": "extension",
-      "version": "0.2.3"
+      "version": "0.3.0"
     },
     {
       "description": "Comprehensive, charming, and fully playable Happy Farm game widget with crops, livestock, economy, orders, day-night/weather cycles, and audio.",
