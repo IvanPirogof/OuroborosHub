@@ -2505,6 +2505,26 @@
       "version": "0.6.0"
     },
     {
+      "description": "Telegram duplex bridge — incoming via Host Service injection, outgoing text/photo/file mirrored to chat",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "8c6131db5a203ac1eca538df5a78ca531f264a0e8efd023666970575eed533a4",
+          "size": 9360
+        },
+        {
+          "path": "plugin.py",
+          "sha256": "abe1bd765d3234125a6c9529ec06c33a4737b952993235450c3457d7aaee5228",
+          "size": 42637
+        }
+      ],
+      "name": "telegram-bridge-handmade",
+      "slug": "telegram-bridge-handmade",
+      "type": "extension",
+      "version": "1.3.0",
+      "when_to_use": "Relay Telegram messages into the Ouroboros chat, mirror outgoing replies, and deliver produced files to Telegram."
+    },
+    {
       "description": "Token Observatory — Liquid Glass dashboard for recorded Ouroboros token usage, tasks and models.",
       "files": [
         {
